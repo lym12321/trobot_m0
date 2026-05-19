@@ -1,0 +1,5 @@
+.idea
+cmake-build-debug
+core/excluded
+components/*
+!components/CMakeLists.txt
