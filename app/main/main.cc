@@ -1,27 +1,15 @@
-#include <utils/vofa.h>
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include "bsp/def.h"
 #include "bsp/io.h"
-#include "bsp/lcd.h"
-#include "bsp/lcd_font.h"
 #include "bsp/time.h"
 #include "bsp/uart.h"
 
+#include "utils/logger.h"
+#include "utils/os.h"
+
 const bsp_io_t led { GPIO_BOARD_PORT, GPIO_BOARD_LED_PIN }, key { GPIO_BOARD_PORT, GPIO_BOARD_KEY_PIN };
-
-int main() {
-    SYSCFG_DL_init();
-
-    bsp_hw_init();
-    bsp_uart_init(UART_DEBUG_INST, DMA_UART0_TX_CHAN_ID);
-
-    NVIC_EnableIRQ(GPIO_BOARD_INT_IRQN);
-
-    for (;;) {
-        bsp_io_toggle(led);
-        bsp_time_delay(50);
-    }
-}
 
 uint32_t lst_key_ts = 0;
 
@@ -41,13 +29,29 @@ extern "C" void GROUP1_IRQHandler() {
     }
 }
 
-// 1khz
-extern "C" void TIMER_TASK_INST_IRQHandler() {
-    switch (DL_TimerG_getPendingInterrupt(TIMER_TASK_INST)) {
-    case DL_TIMER_IIDX_ZERO:
-        bsp_uart_printf_async(UART_DEBUG_INST, "timer running %d\r\n", bsp_time_get_ms());
-        break;
-    default:
-        break;
+extern void example_task(void *args);
+
+void app_entrance(void *args) {
+    bsp_hw_init();
+    bsp_uart_init(UART0, DMA_UART0_TX_CHAN_ID);
+
+    NVIC_EnableIRQ(GPIO_BOARD_INT_IRQN);
+
+    logger::init(UART_DEBUG_INST, logger::INFO);
+
+    os::task::static_create(example_task, nullptr, "example", 256, os::task::Priority::MEDIUM);
+
+    for (;;) {
+        bsp_io_toggle(led);
+        os::task::sleep(50);
     }
+}
+
+int main() {
+    SYSCFG_DL_init();
+
+    xTaskCreate(app_entrance, "entrance", 512, nullptr, tskIDLE_PRIORITY + 1, nullptr);
+    vTaskStartScheduler();
+
+    for (;;) asm("nop");
 }

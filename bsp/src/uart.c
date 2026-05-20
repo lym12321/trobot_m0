@@ -4,6 +4,7 @@
 
 #include "bsp/uart.h"
 #include "bsp/ds.h"
+#include "bsp/sys.h"
 
 #include "stdio.h"
 #include "stdarg.h"
@@ -113,6 +114,18 @@ void bsp_uart_printf_async(bsp_uart_e device, const char *fmt, ...) {
 
 void bsp_uart_set_callback(bsp_uart_e device, bsp_uart_callback_t cb) {
     callback[idx(device)] = cb;
+}
+
+void bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate) {
+    BSP_ASSERT(baudrate > 0);
+
+    while (DL_UART_isBusy(device)) __asm__ __volatile__ ("nop");
+
+    unsigned long state = bsp_sys_enter_critical();
+    DL_UART_changeConfig(device);
+    DL_UART_configBaudRate(device, UART_DEBUG_INST_FREQUENCY, baudrate);
+    DL_UART_enable(device);
+    bsp_sys_exit_critical(state);
 }
 
 

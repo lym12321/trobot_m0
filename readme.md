@@ -8,7 +8,6 @@
 > - 该项目基于立创天猛星开发，参考：[【立创·天猛星MSPM0G3507开发板】入门手册](https://wiki.lckfb.com/zh-hans/tmx-mspm0g3507/keil-beginner/)。
 > - 若要使用 `mspm0g3519`，需要改一改 `core` 里的 `CMakeLists.txt`。
 > - 项目随缘更新，不保证功能完善，Welcome PRs。
-> - 当前为裸机版本，因此有许多组件不可用，后续视情况添加 FreeRTOS 支持。
 
 ### 快速开始
 

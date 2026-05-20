@@ -1,0 +1,3 @@
+[submodule "components/utils"]
+	path = components/utils
+	url = https://github.com/lym12321/tr_comp_utils.git
