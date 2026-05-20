@@ -8,8 +8,9 @@
 #include "bsp/time.h"
 
 #define LCD_PORT SPI1_INST
-#define LCD_X_OFFSET 2
-#define LCD_Y_OFFSET 1
+#define LCD_MADCTL_MY 0x80
+#define LCD_MADCTL_MX 0x40
+#define LCD_MADCTL_MV 0x20
 
 #define dc(x)  ((x) ? DL_GPIO_setPins(GPIO_LCD_PORT, GPIO_LCD_DC_PIN) : DL_GPIO_clearPins(GPIO_LCD_PORT, GPIO_LCD_DC_PIN))
 #define res(x) ((x) ? DL_GPIO_setPins(GPIO_LCD_PORT, GPIO_LCD_RES_PIN) : DL_GPIO_clearPins(GPIO_LCD_PORT, GPIO_LCD_RES_PIN))
@@ -20,6 +21,53 @@ static const bsp_spi_device_t lcd_device = {
     .inst = LCD_PORT,
     .cs_port = SPI_CS_PORT,
     .cs_pin = SPI_CS_LCD_PIN,
+};
+
+typedef struct {
+    uint8_t madctl;
+    uint16_t width;
+    uint16_t height;
+    uint16_t x_offset;
+    uint16_t y_offset;
+} lcd_direction_config_t;
+
+static const lcd_direction_config_t lcd_direction_configs[] = {
+    [E_LCD_DIRECTION_0] = {
+        .madctl = LCD_MADCTL_MX | LCD_MADCTL_MY,
+        .width = BSP_LCD_WIDTH,
+        .height = BSP_LCD_HEIGHT,
+        .x_offset = 2,
+        .y_offset = 1,
+    },
+    [E_LCD_DIRECTION_90] = {
+        .madctl = LCD_MADCTL_MX | LCD_MADCTL_MV,
+        .width = BSP_LCD_HEIGHT,
+        .height = BSP_LCD_WIDTH,
+        .x_offset = 1,
+        .y_offset = 2,
+    },
+    [E_LCD_DIRECTION_180] = {
+        .madctl = 0,
+        .width = BSP_LCD_WIDTH,
+        .height = BSP_LCD_HEIGHT,
+        .x_offset = 2,
+        .y_offset = 1,
+    },
+    [E_LCD_DIRECTION_270] = {
+        .madctl = LCD_MADCTL_MY | LCD_MADCTL_MV,
+        .width = BSP_LCD_HEIGHT,
+        .height = BSP_LCD_WIDTH,
+        .x_offset = 1,
+        .y_offset = 2,
+    },
+};
+
+static lcd_direction_config_t lcd_config = {
+    .madctl = LCD_MADCTL_MX | LCD_MADCTL_MY,
+    .width = BSP_LCD_WIDTH,
+    .height = BSP_LCD_HEIGHT,
+    .x_offset = 2,
+    .y_offset = 1,
 };
 
 enum {
@@ -48,8 +96,24 @@ enum {
     ST7735_GMCTRN1 = 0xE1,
 };
 
+static void lcd_wait_idle() {
+    while (DL_SPI_isBusy(LCD_PORT)) {
+    }
+}
+
+static void lcd_flush_rx_if_full() {
+    if (DL_SPI_isRXFIFOFull(LCD_PORT)) {
+        bsp_spi_flush_rx(LCD_PORT);
+    }
+}
+
 static void lcd_write_byte(uint8_t data) {
-    bsp_spi_transmit(LCD_PORT, data);
+    while (DL_SPI_isTXFIFOFull(LCD_PORT)) {
+        lcd_flush_rx_if_full();
+    }
+
+    lcd_flush_rx_if_full();
+    DL_SPI_transmitData8(LCD_PORT, data);
 }
 
 static void lcd_write_command(uint8_t command) {
@@ -70,6 +134,7 @@ static void lcd_write_command_data(uint8_t command, const uint8_t *data, uint8_t
     dc(0);
     bsp_spi_device_select(&lcd_device);
     lcd_write_byte(command);
+    lcd_wait_idle();
     dc(1);
     while (length--) {
         lcd_write_byte(*data++);
@@ -89,24 +154,42 @@ void bsp_lcd_invert(uint8_t enable) {
     lcd_write_command(enable ? ST7735_INVON : ST7735_INVOFF);
 }
 
-void bsp_lcd_set_address(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-    if (x0 >= BSP_LCD_WIDTH || y0 >= BSP_LCD_HEIGHT) {
+void bsp_lcd_set_direction(bsp_lcd_direction_e direction) {
+    if (direction > E_LCD_DIRECTION_270) {
         return;
     }
-    if (x1 >= BSP_LCD_WIDTH) {
-        x1 = BSP_LCD_WIDTH - 1;
+
+    lcd_config = lcd_direction_configs[direction];
+    lcd_write_command(ST7735_MADCTL);
+    lcd_write_data(lcd_config.madctl);
+}
+
+uint16_t bsp_lcd_get_width() {
+    return lcd_config.width;
+}
+
+uint16_t bsp_lcd_get_height() {
+    return lcd_config.height;
+}
+
+void bsp_lcd_set_address(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    if (x0 >= lcd_config.width || y0 >= lcd_config.height) {
+        return;
     }
-    if (y1 >= BSP_LCD_HEIGHT) {
-        y1 = BSP_LCD_HEIGHT - 1;
+    if (x1 >= lcd_config.width) {
+        x1 = lcd_config.width - 1;
+    }
+    if (y1 >= lcd_config.height) {
+        y1 = lcd_config.height - 1;
     }
     if (x1 < x0 || y1 < y0) {
         return;
     }
 
-    x0 += LCD_X_OFFSET;
-    x1 += LCD_X_OFFSET;
-    y0 += LCD_Y_OFFSET;
-    y1 += LCD_Y_OFFSET;
+    x0 += lcd_config.x_offset;
+    x1 += lcd_config.x_offset;
+    y0 += lcd_config.y_offset;
+    y1 += lcd_config.y_offset;
 
     uint8_t column[] = {
         (uint8_t)(x0 >> 8), (uint8_t)x0,
@@ -141,6 +224,19 @@ void bsp_lcd_write_color(uint16_t color, uint32_t count) {
     }
 }
 
+void bsp_lcd_write_bytes(const uint8_t *data, uint32_t len) {
+    if (data == 0) {
+        return;
+    }
+
+    while (len > 0) {
+        uint32_t written = DL_SPI_fillTXFIFO8(LCD_PORT, data, len);
+        data += written;
+        len -= written;
+        lcd_flush_rx_if_full();
+    }
+}
+
 void bsp_lcd_write_rgb565(const uint16_t *data, uint32_t count) {
     if (data == 0) {
         return;
@@ -154,7 +250,7 @@ void bsp_lcd_write_rgb565(const uint16_t *data, uint32_t count) {
 }
 
 void bsp_lcd_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
-    if (x >= BSP_LCD_WIDTH || y >= BSP_LCD_HEIGHT) {
+    if (x >= lcd_config.width || y >= lcd_config.height) {
         return;
     }
 
@@ -165,15 +261,15 @@ void bsp_lcd_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
 }
 
 void bsp_lcd_fill_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color) {
-    if (x >= BSP_LCD_WIDTH || y >= BSP_LCD_HEIGHT || width == 0 || height == 0) {
+    if (x >= lcd_config.width || y >= lcd_config.height || width == 0 || height == 0) {
         return;
     }
 
-    if (x + width > BSP_LCD_WIDTH) {
-        width = BSP_LCD_WIDTH - x;
+    if (x + width > lcd_config.width) {
+        width = lcd_config.width - x;
     }
-    if (y + height > BSP_LCD_HEIGHT) {
-        height = BSP_LCD_HEIGHT - y;
+    if (y + height > lcd_config.height) {
+        height = lcd_config.height - y;
     }
 
     bsp_lcd_set_address(x, y, x + width - 1, y + height - 1);
@@ -183,19 +279,19 @@ void bsp_lcd_fill_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, 
 }
 
 void bsp_lcd_clear(uint16_t color) {
-    bsp_lcd_fill_rect(0, 0, BSP_LCD_WIDTH, BSP_LCD_HEIGHT, color);
+    bsp_lcd_fill_rect(0, 0, lcd_config.width, lcd_config.height, color);
 }
 
 void bsp_lcd_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *data) {
-    if (data == 0 || x >= BSP_LCD_WIDTH || y >= BSP_LCD_HEIGHT || width == 0 || height == 0) {
+    if (data == 0 || x >= lcd_config.width || y >= lcd_config.height || width == 0 || height == 0) {
         return;
     }
 
-    if (x + width > BSP_LCD_WIDTH) {
-        width = BSP_LCD_WIDTH - x;
+    if (x + width > lcd_config.width) {
+        width = lcd_config.width - x;
     }
-    if (y + height > BSP_LCD_HEIGHT) {
-        height = BSP_LCD_HEIGHT - y;
+    if (y + height > lcd_config.height) {
+        height = lcd_config.height - y;
     }
 
     bsp_lcd_set_address(x, y, x + width - 1, y + height - 1);
@@ -250,8 +346,7 @@ void bsp_lcd_init() {
     lcd_write_command(ST7735_VMCTR1);
     lcd_write_data(0x0e);
 
-    lcd_write_command(ST7735_MADCTL);
-    lcd_write_data((1 << 7) | (1 << 6));
+    bsp_lcd_set_direction(E_LCD_DIRECTION_0);
 
     const uint8_t gmctrp1[] = {
         0x0f, 0x1a, 0x0f, 0x18, 0x2f, 0x28, 0x20, 0x22,

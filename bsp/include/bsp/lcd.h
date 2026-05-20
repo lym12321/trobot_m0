@@ -31,8 +31,9 @@
  *   bsp_lcd_write_end().
  */
 
-#define BSP_LCD_WIDTH  128
-#define BSP_LCD_HEIGHT 160
+#define BSP_LCD_WIDTH     128
+#define BSP_LCD_HEIGHT    160
+#define BSP_LCD_MAX_WIDTH 160
 
 #define LCD_RGB565(r, g, b) \
     ((uint16_t)((((uint16_t)(r) & 0xf8u) << 8) | (((uint16_t)(g) & 0xfcu) << 3) | ((uint16_t)(b) >> 3)))
@@ -52,8 +53,22 @@
 extern "C" {
 #endif
 
+typedef enum {
+    E_LCD_DIRECTION_0 = 0,
+    E_LCD_DIRECTION_90,
+    E_LCD_DIRECTION_180,
+    E_LCD_DIRECTION_270,
+} bsp_lcd_direction_e;
+
 /* Initialize the ST7735 controller and turn on the display/backlight. */
 void bsp_lcd_init();
+
+/* Set display scan direction. 90/270 degree modes swap the logical width/height. */
+void bsp_lcd_set_direction(bsp_lcd_direction_e direction);
+
+/* Return current logical display size after direction is applied. */
+uint16_t bsp_lcd_get_width();
+uint16_t bsp_lcd_get_height();
 
 /* Enable or disable the LCD backlight GPIO. */
 void bsp_lcd_backlight(uint8_t enable);
@@ -75,6 +90,9 @@ void bsp_lcd_write_end();
 
 /* Write count copies of one RGB565 color into the active window. */
 void bsp_lcd_write_color(uint16_t color, uint32_t count);
+
+/* Write raw bytes into the active window. Intended for prepared RGB565 streams. */
+void bsp_lcd_write_bytes(const uint8_t *data, uint32_t len);
 
 /* Write count RGB565 pixels into the active window. */
 void bsp_lcd_write_rgb565(const uint16_t *data, uint32_t count);
