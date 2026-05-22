@@ -11,6 +11,19 @@
 #define LCD_MADCTL_MY 0x80
 #define LCD_MADCTL_MX 0x40
 #define LCD_MADCTL_MV 0x20
+#define LCD_TX_BUFFER_SIZE 256u
+#define LCD_DMA_MIN_BYTES  32u
+#define LCD_DMA_MAX_BYTES  65535u
+
+#ifndef BSP_LCD_USE_DMA
+#define BSP_LCD_USE_DMA 1
+#endif
+
+#if BSP_LCD_USE_DMA && defined(DMA_SPI1_RX_CHAN_ID) && defined(SPI1_INST_DMA_TRIGGER_0)
+#define LCD_USE_RX_DMA 1
+#else
+#define LCD_USE_RX_DMA 0
+#endif
 
 #define dc(x)  ((x) ? DL_GPIO_setPins(GPIO_LCD_PORT, GPIO_LCD_DC_PIN) : DL_GPIO_clearPins(GPIO_LCD_PORT, GPIO_LCD_DC_PIN))
 #define res(x) ((x) ? DL_GPIO_setPins(GPIO_LCD_PORT, GPIO_LCD_RES_PIN) : DL_GPIO_clearPins(GPIO_LCD_PORT, GPIO_LCD_RES_PIN))
@@ -70,6 +83,11 @@ static lcd_direction_config_t lcd_config = {
     .y_offset = 1,
 };
 
+static uint8_t lcd_tx_buffer[LCD_TX_BUFFER_SIZE];
+#if LCD_USE_RX_DMA
+static volatile uint8_t lcd_rx_dummy;
+#endif
+
 enum {
     ST7735_SWRESET = 0x01,
     ST7735_SLPOUT  = 0x11,
@@ -101,11 +119,90 @@ static void lcd_wait_idle() {
     }
 }
 
+static void lcd_flush_rx() {
+    bsp_spi_flush_rx(LCD_PORT);
+}
+
 static void lcd_flush_rx_if_full() {
     if (DL_SPI_isRXFIFOFull(LCD_PORT)) {
-        bsp_spi_flush_rx(LCD_PORT);
+        lcd_flush_rx();
     }
 }
+
+#if BSP_LCD_USE_DMA
+static void lcd_dma_config() {
+    DL_DMA_disableChannel(DMA, DMA_SPI1_TX_CHAN_ID);
+    DL_DMA_configTransfer(DMA, DMA_SPI1_TX_CHAN_ID,
+        DL_DMA_SINGLE_TRANSFER_MODE,
+        DL_DMA_NORMAL_MODE,
+        DL_DMA_WIDTH_BYTE,
+        DL_DMA_WIDTH_BYTE,
+        DL_DMA_ADDR_INCREMENT,
+        DL_DMA_ADDR_UNCHANGED);
+    DL_DMA_setTrigger(DMA, DMA_SPI1_TX_CHAN_ID, SPI1_INST_DMA_TRIGGER_1, DL_DMA_TRIGGER_TYPE_EXTERNAL);
+
+#if LCD_USE_RX_DMA
+    DL_DMA_disableChannel(DMA, DMA_SPI1_RX_CHAN_ID);
+    DL_DMA_configTransfer(DMA, DMA_SPI1_RX_CHAN_ID,
+        DL_DMA_SINGLE_TRANSFER_MODE,
+        DL_DMA_NORMAL_MODE,
+        DL_DMA_WIDTH_BYTE,
+        DL_DMA_WIDTH_BYTE,
+        DL_DMA_ADDR_UNCHANGED,
+        DL_DMA_ADDR_UNCHANGED);
+    DL_DMA_setTrigger(DMA, DMA_SPI1_RX_CHAN_ID, SPI1_INST_DMA_TRIGGER_0, DL_DMA_TRIGGER_TYPE_EXTERNAL);
+#endif
+
+    DL_SPI_setFIFOThreshold(LCD_PORT, DL_SPI_RX_FIFO_LEVEL_1_4_FULL, DL_SPI_TX_FIFO_LEVEL_ONE_FRAME);
+    DL_SPI_enableDMATransmitEvent(LCD_PORT);
+#if LCD_USE_RX_DMA
+    DL_SPI_enableDMAReceiveEvent(LCD_PORT, DL_SPI_DMA_INTERRUPT_RX);
+#endif
+}
+
+static void lcd_write_bytes_dma(const uint8_t *data, uint32_t len) {
+    lcd_dma_config();
+
+    while (len > 0) {
+        uint16_t chunk = (len > LCD_DMA_MAX_BYTES) ? LCD_DMA_MAX_BYTES : (uint16_t)len;
+
+        lcd_flush_rx();
+        DL_DMA_disableChannel(DMA, DMA_SPI1_TX_CHAN_ID);
+        DL_DMA_setSrcAddr(DMA, DMA_SPI1_TX_CHAN_ID, (uint32_t)data);
+        DL_DMA_setDestAddr(DMA, DMA_SPI1_TX_CHAN_ID, (uint32_t)&LCD_PORT->TXDATA);
+        DL_DMA_setTransferSize(DMA, DMA_SPI1_TX_CHAN_ID, chunk);
+
+#if LCD_USE_RX_DMA
+        DL_DMA_disableChannel(DMA, DMA_SPI1_RX_CHAN_ID);
+        DL_DMA_setSrcAddr(DMA, DMA_SPI1_RX_CHAN_ID, (uint32_t)&LCD_PORT->RXDATA);
+        DL_DMA_setDestAddr(DMA, DMA_SPI1_RX_CHAN_ID, (uint32_t)&lcd_rx_dummy);
+        DL_DMA_setTransferSize(DMA, DMA_SPI1_RX_CHAN_ID, chunk);
+        DL_SPI_clearDMAReceiveEventStatus(LCD_PORT, DL_SPI_DMA_INTERRUPT_RX);
+        DL_DMA_enableChannel(DMA, DMA_SPI1_RX_CHAN_ID);
+#endif
+
+        DL_SPI_clearDMATransmitEventStatus(LCD_PORT);
+        DL_DMA_enableChannel(DMA, DMA_SPI1_TX_CHAN_ID);
+
+#if LCD_USE_RX_DMA
+        while (DL_DMA_isChannelEnabled(DMA, DMA_SPI1_TX_CHAN_ID) ||
+               DL_DMA_isChannelEnabled(DMA, DMA_SPI1_RX_CHAN_ID)) {
+        }
+#else
+        while (DL_DMA_isChannelEnabled(DMA, DMA_SPI1_TX_CHAN_ID)) {
+            if (!DL_SPI_isRXFIFOEmpty(LCD_PORT)) {
+                lcd_flush_rx();
+            }
+        }
+#endif
+        lcd_wait_idle();
+        lcd_flush_rx();
+
+        data += chunk;
+        len -= chunk;
+    }
+}
+#endif
 
 static void lcd_write_byte(uint8_t data) {
     while (DL_SPI_isTXFIFOFull(LCD_PORT)) {
@@ -116,30 +213,49 @@ static void lcd_write_byte(uint8_t data) {
     DL_SPI_transmitData8(LCD_PORT, data);
 }
 
-static void lcd_write_command(uint8_t command) {
-    dc(0);
+static void lcd_select() {
     bsp_spi_device_select(&lcd_device);
-    lcd_write_byte(command);
+}
+
+static void lcd_deselect() {
     bsp_spi_device_deselect(&lcd_device);
 }
 
-static void lcd_write_data(uint8_t data) {
+static void lcd_write_command_raw(uint8_t command) {
+    dc(0);
+    lcd_write_byte(command);
+}
+
+static void lcd_write_data_raw(uint8_t data) {
     dc(1);
-    bsp_spi_device_select(&lcd_device);
     lcd_write_byte(data);
-    bsp_spi_device_deselect(&lcd_device);
 }
 
-static void lcd_write_command_data(uint8_t command, const uint8_t *data, uint8_t length) {
-    dc(0);
-    bsp_spi_device_select(&lcd_device);
-    lcd_write_byte(command);
+static void lcd_write_command_data_raw(uint8_t command, const uint8_t *data, uint8_t length) {
+    lcd_write_command_raw(command);
     lcd_wait_idle();
     dc(1);
     while (length--) {
         lcd_write_byte(*data++);
     }
-    bsp_spi_device_deselect(&lcd_device);
+}
+
+static void lcd_write_command(uint8_t command) {
+    lcd_select();
+    lcd_write_command_raw(command);
+    lcd_deselect();
+}
+
+static void lcd_write_data(uint8_t data) {
+    lcd_select();
+    lcd_write_data_raw(data);
+    lcd_deselect();
+}
+
+static void lcd_write_command_data(uint8_t command, const uint8_t *data, uint8_t length) {
+    lcd_select();
+    lcd_write_command_data_raw(command, data, length);
+    lcd_deselect();
 }
 
 void bsp_lcd_backlight(uint8_t enable) {
@@ -160,8 +276,7 @@ void bsp_lcd_set_direction(bsp_lcd_direction_e direction) {
     }
 
     lcd_config = lcd_direction_configs[direction];
-    lcd_write_command(ST7735_MADCTL);
-    lcd_write_data(lcd_config.madctl);
+    lcd_write_command_data(ST7735_MADCTL, &lcd_config.madctl, 1);
 }
 
 uint16_t bsp_lcd_get_width() {
@@ -172,25 +287,29 @@ uint16_t bsp_lcd_get_height() {
     return lcd_config.height;
 }
 
-void bsp_lcd_set_address(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-    if (x0 >= lcd_config.width || y0 >= lcd_config.height) {
-        return;
+static uint8_t lcd_prepare_address(uint16_t *x0, uint16_t *y0, uint16_t *x1, uint16_t *y1) {
+    if (*x0 >= lcd_config.width || *y0 >= lcd_config.height) {
+        return 0;
     }
-    if (x1 >= lcd_config.width) {
-        x1 = lcd_config.width - 1;
+    if (*x1 >= lcd_config.width) {
+        *x1 = lcd_config.width - 1;
     }
-    if (y1 >= lcd_config.height) {
-        y1 = lcd_config.height - 1;
+    if (*y1 >= lcd_config.height) {
+        *y1 = lcd_config.height - 1;
     }
-    if (x1 < x0 || y1 < y0) {
-        return;
+    if (*x1 < *x0 || *y1 < *y0) {
+        return 0;
     }
 
-    x0 += lcd_config.x_offset;
-    x1 += lcd_config.x_offset;
-    y0 += lcd_config.y_offset;
-    y1 += lcd_config.y_offset;
+    *x0 += lcd_config.x_offset;
+    *x1 += lcd_config.x_offset;
+    *y0 += lcd_config.y_offset;
+    *y1 += lcd_config.y_offset;
 
+    return 1;
+}
+
+static void lcd_set_address_raw(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     uint8_t column[] = {
         (uint8_t)(x0 >> 8), (uint8_t)x0,
         (uint8_t)(x1 >> 8), (uint8_t)x1,
@@ -200,27 +319,83 @@ void bsp_lcd_set_address(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
         (uint8_t)(y1 >> 8), (uint8_t)y1,
     };
 
-    lcd_write_command_data(ST7735_CASET, column, sizeof(column));
-    lcd_write_command_data(ST7735_RASET, row, sizeof(row));
-    lcd_write_command(ST7735_RAMWR);
+    lcd_write_command_data_raw(ST7735_CASET, column, sizeof(column));
+    lcd_write_command_data_raw(ST7735_RASET, row, sizeof(row));
+    lcd_write_command_raw(ST7735_RAMWR);
+    lcd_wait_idle();
+    dc(1);
+}
+
+void bsp_lcd_set_address(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    if (!lcd_prepare_address(&x0, &y0, &x1, &y1)) {
+        return;
+    }
+
+    bsp_spi_bus_lock();
+    lcd_select();
+    lcd_set_address_raw(x0, y0, x1, y1);
+    lcd_deselect();
+    bsp_spi_bus_unlock();
 }
 
 void bsp_lcd_write_begin() {
     dc(1);
-    bsp_spi_device_select(&lcd_device);
+    lcd_select();
 }
 
 void bsp_lcd_write_end() {
-    bsp_spi_device_deselect(&lcd_device);
+    lcd_deselect();
+}
+
+static uint8_t lcd_clip_rect(uint16_t *x, uint16_t *y, uint16_t *width, uint16_t *height) {
+    if (*x >= lcd_config.width || *y >= lcd_config.height || *width == 0 || *height == 0) {
+        return 0;
+    }
+    if (*x + *width > lcd_config.width) {
+        *width = lcd_config.width - *x;
+    }
+    if (*y + *height > lcd_config.height) {
+        *height = lcd_config.height - *y;
+    }
+    return 1;
+}
+
+static void lcd_begin_window(uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
+    uint16_t x1 = x + width - 1u;
+    uint16_t y1 = y + height - 1u;
+
+    (void)lcd_prepare_address(&x, &y, &x1, &y1);
+    lcd_select();
+    lcd_set_address_raw(x, y, x1, y1);
 }
 
 void bsp_lcd_write_color(uint16_t color, uint32_t count) {
+    if (count == 0) {
+        return;
+    }
+
     uint8_t hi = (uint8_t)(color >> 8);
     uint8_t lo = (uint8_t)color;
+    uint32_t buffered_pixels = count;
+    uint32_t max_pixels = sizeof(lcd_tx_buffer) / 2u;
 
-    while (count--) {
-        lcd_write_byte(hi);
-        lcd_write_byte(lo);
+    if (buffered_pixels > max_pixels) {
+        buffered_pixels = max_pixels;
+    }
+
+    for (uint32_t i = 0; i < buffered_pixels * 2u; i += 2) {
+        lcd_tx_buffer[i] = hi;
+        lcd_tx_buffer[i + 1u] = lo;
+    }
+
+    while (count > 0) {
+        uint32_t pixels = count;
+        if (pixels > buffered_pixels) {
+            pixels = buffered_pixels;
+        }
+
+        bsp_lcd_write_bytes(lcd_tx_buffer, pixels * 2u);
+        count -= pixels;
     }
 }
 
@@ -229,7 +404,18 @@ void bsp_lcd_write_bytes(const uint8_t *data, uint32_t len) {
         return;
     }
 
+#if BSP_LCD_USE_DMA
+    if (len >= LCD_DMA_MIN_BYTES) {
+        lcd_write_bytes_dma(data, len);
+        return;
+    }
+#endif
+
     while (len > 0) {
+        while (DL_SPI_isTXFIFOFull(LCD_PORT)) {
+            lcd_flush_rx_if_full();
+        }
+
         uint32_t written = DL_SPI_fillTXFIFO8(LCD_PORT, data, len);
         data += written;
         len -= written;
@@ -242,40 +428,51 @@ void bsp_lcd_write_rgb565(const uint16_t *data, uint32_t count) {
         return;
     }
 
-    while (count--) {
-        uint16_t color = *data++;
-        lcd_write_byte((uint8_t)(color >> 8));
-        lcd_write_byte((uint8_t)color);
+    while (count > 0) {
+        uint32_t pixels = count;
+        uint32_t max_pixels = sizeof(lcd_tx_buffer) / 2u;
+        if (pixels > max_pixels) {
+            pixels = max_pixels;
+        }
+
+        uint8_t *out = lcd_tx_buffer;
+        for (uint32_t i = 0; i < pixels; i++) {
+            uint16_t color = data[i];
+            *out++ = (uint8_t)(color >> 8);
+            *out++ = (uint8_t)color;
+        }
+
+        bsp_lcd_write_bytes(lcd_tx_buffer, pixels * 2u);
+        data += pixels;
+        count -= pixels;
     }
 }
 
 void bsp_lcd_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
-    if (x >= lcd_config.width || y >= lcd_config.height) {
+    uint16_t width = 1;
+    uint16_t height = 1;
+
+    if (!lcd_clip_rect(&x, &y, &width, &height)) {
         return;
     }
 
-    bsp_lcd_set_address(x, y, x, y);
-    bsp_lcd_write_begin();
+    bsp_spi_bus_lock();
+    lcd_begin_window(x, y, width, height);
     bsp_lcd_write_color(color, 1);
-    bsp_lcd_write_end();
+    lcd_deselect();
+    bsp_spi_bus_unlock();
 }
 
 void bsp_lcd_fill_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color) {
-    if (x >= lcd_config.width || y >= lcd_config.height || width == 0 || height == 0) {
+    if (!lcd_clip_rect(&x, &y, &width, &height)) {
         return;
     }
 
-    if (x + width > lcd_config.width) {
-        width = lcd_config.width - x;
-    }
-    if (y + height > lcd_config.height) {
-        height = lcd_config.height - y;
-    }
-
-    bsp_lcd_set_address(x, y, x + width - 1, y + height - 1);
-    bsp_lcd_write_begin();
+    bsp_spi_bus_lock();
+    lcd_begin_window(x, y, width, height);
     bsp_lcd_write_color(color, (uint32_t)width * height);
-    bsp_lcd_write_end();
+    lcd_deselect();
+    bsp_spi_bus_unlock();
 }
 
 void bsp_lcd_clear(uint16_t color) {
@@ -283,21 +480,15 @@ void bsp_lcd_clear(uint16_t color) {
 }
 
 void bsp_lcd_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *data) {
-    if (data == 0 || x >= lcd_config.width || y >= lcd_config.height || width == 0 || height == 0) {
+    if (data == 0 || !lcd_clip_rect(&x, &y, &width, &height)) {
         return;
     }
 
-    if (x + width > lcd_config.width) {
-        width = lcd_config.width - x;
-    }
-    if (y + height > lcd_config.height) {
-        height = lcd_config.height - y;
-    }
-
-    bsp_lcd_set_address(x, y, x + width - 1, y + height - 1);
-    bsp_lcd_write_begin();
+    bsp_spi_bus_lock();
+    lcd_begin_window(x, y, width, height);
     bsp_lcd_write_rgb565(data, (uint32_t)width * height);
-    bsp_lcd_write_end();
+    lcd_deselect();
+    bsp_spi_bus_unlock();
 }
 
 void bsp_lcd_init() {

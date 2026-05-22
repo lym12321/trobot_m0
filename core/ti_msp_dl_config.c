@@ -335,8 +335,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_UART_DEBUG_init(void)
     DL_UART_Main_setBaudRateDivisor(UART_DEBUG_INST, UART_DEBUG_IBRD_40_MHZ_2000000_BAUD, UART_DEBUG_FBRD_40_MHZ_2000000_BAUD);
 
 
-    /* Configure DMA Receive Event */
-    DL_UART_Main_enableDMAReceiveEvent(UART_DEBUG_INST, DL_UART_DMA_INTERRUPT_RX_TIMEOUT);
     /* Configure DMA Transmit Event */
     DL_UART_Main_enableDMATransmitEvent(UART_DEBUG_INST);
     /* Configure FIFOs */
@@ -372,6 +370,12 @@ SYSCONFIG_WEAK void SYSCFG_DL_SPI1_init(void) {
      *     20000000 = (80000000)/((1 + 1) * 2)
      */
     DL_SPI_setBitRateSerialClockDivider(SPI1_INST, 1);
+
+    /* Enable SPI TX interrupt as a trigger for DMA */
+    DL_SPI_enableDMATransmitEvent(SPI1_INST);
+
+    /* Enable SPI RX interrupt as a trigger for DMA */
+    DL_SPI_enableDMAReceiveEvent(SPI1_INST, DL_SPI_DMA_INTERRUPT_RX);
     /* Set RX and TX FIFO threshold levels */
     DL_SPI_setFIFOThreshold(SPI1_INST, DL_SPI_RX_FIFO_LEVEL_1_2_FULL, DL_SPI_TX_FIFO_LEVEL_1_2_EMPTY);
 
@@ -386,7 +390,7 @@ static const DL_DMA_Config gDMA_UART0_TXConfig = {
     .srcIncrement   = DL_DMA_ADDR_INCREMENT,
     .destWidth      = DL_DMA_WIDTH_BYTE,
     .srcWidth       = DL_DMA_WIDTH_BYTE,
-    .trigger        = UART_DEBUG_INST_DMA_TRIGGER_0,
+    .trigger        = UART_DEBUG_INST_DMA_TRIGGER,
     .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
 };
 
@@ -394,24 +398,40 @@ SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART0_TX_init(void)
 {
     DL_DMA_initChannel(DMA, DMA_UART0_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART0_TXConfig);
 }
-static const DL_DMA_Config gDMA_UART0_RXConfig = {
+static const DL_DMA_Config gDMA_SPI1_RXConfig = {
     .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
     .extendedMode   = DL_DMA_NORMAL_MODE,
-    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
+    .destIncrement  = DL_DMA_ADDR_INCREMENT,
     .srcIncrement   = DL_DMA_ADDR_UNCHANGED,
-    .destWidth      = DL_DMA_WIDTH_WORD,
-    .srcWidth       = DL_DMA_WIDTH_WORD,
-    .trigger        = UART_DEBUG_INST_DMA_TRIGGER_1,
+    .destWidth      = DL_DMA_WIDTH_BYTE,
+    .srcWidth       = DL_DMA_WIDTH_BYTE,
+    .trigger        = SPI1_INST_DMA_TRIGGER_0,
     .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
 };
 
-SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART0_RX_init(void)
+SYSCONFIG_WEAK void SYSCFG_DL_DMA_SPI1_RX_init(void)
 {
-    DL_DMA_initChannel(DMA, DMA_UART0_RX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART0_RXConfig);
+    DL_DMA_initChannel(DMA, DMA_SPI1_RX_CHAN_ID , (DL_DMA_Config *) &gDMA_SPI1_RXConfig);
+}
+static const DL_DMA_Config gDMA_SPI1_TXConfig = {
+    .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
+    .extendedMode   = DL_DMA_NORMAL_MODE,
+    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
+    .srcIncrement   = DL_DMA_ADDR_INCREMENT,
+    .destWidth      = DL_DMA_WIDTH_BYTE,
+    .srcWidth       = DL_DMA_WIDTH_BYTE,
+    .trigger        = SPI1_INST_DMA_TRIGGER_1,
+    .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_DMA_SPI1_TX_init(void)
+{
+    DL_DMA_initChannel(DMA, DMA_SPI1_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_SPI1_TXConfig);
 }
 SYSCONFIG_WEAK void SYSCFG_DL_DMA_init(void){
     SYSCFG_DL_DMA_UART0_TX_init();
-    SYSCFG_DL_DMA_UART0_RX_init();
+    SYSCFG_DL_DMA_SPI1_RX_init();
+    SYSCFG_DL_DMA_SPI1_TX_init();
 }
 
 

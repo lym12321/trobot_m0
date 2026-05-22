@@ -12,6 +12,12 @@ typedef struct {
     uint32_t cs_pin;
 } bsp_spi_device_t;
 
+/* Lock the shared SPI bus across multi-step transactions. Device select/deselect
+ * already calls these, so most single-device transactions do not need manual use.
+ */
+void bsp_spi_bus_lock();
+void bsp_spi_bus_unlock();
+
 // spi read and write
 void bsp_spi_flush_rx(SPI_Regs *device);
 uint8_t bsp_spi_transfer(SPI_Regs *device, uint8_t data);

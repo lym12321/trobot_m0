@@ -29,6 +29,8 @@
  * - For custom high-speed drawing, call bsp_lcd_set_address(), then
  *   bsp_lcd_write_begin(), one or more bsp_lcd_write_* calls, and finally
  *   bsp_lcd_write_end().
+ * - If a custom stream can run concurrently with another SPI1 user, hold
+ *   bsp_spi_bus_lock() across the whole sequence above.
  */
 
 #define BSP_LCD_WIDTH     128

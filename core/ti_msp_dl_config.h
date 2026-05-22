@@ -138,11 +138,14 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 
 
 /* Defines for DMA_UART0_TX */
-#define DMA_UART0_TX_CHAN_ID                                                 (1)
-#define UART_DEBUG_INST_DMA_TRIGGER_0                        (DMA_UART0_TX_TRIG)
-/* Defines for DMA_UART0_RX */
-#define DMA_UART0_RX_CHAN_ID                                                 (0)
-#define UART_DEBUG_INST_DMA_TRIGGER_1                        (DMA_UART0_RX_TRIG)
+#define DMA_UART0_TX_CHAN_ID                                                 (2)
+#define UART_DEBUG_INST_DMA_TRIGGER                          (DMA_UART0_TX_TRIG)
+/* Defines for DMA_SPI1_RX */
+#define DMA_SPI1_RX_CHAN_ID                                                  (1)
+#define SPI1_INST_DMA_TRIGGER_0                               (DMA_SPI1_RX_TRIG)
+/* Defines for DMA_SPI1_TX */
+#define DMA_SPI1_TX_CHAN_ID                                                  (0)
+#define SPI1_INST_DMA_TRIGGER_1                               (DMA_SPI1_TX_TRIG)
 
 
 /* Port definition for Pin Group GPIO_BOARD */
