@@ -22,7 +22,7 @@ SysConfig and DriverLib rules still matter.
 Use an ARM embedded GCC toolchain.
 
 ```powershell
-cmake -S . -B cmake-build-debug -G Ninja
+cmake -S . -B cmake-build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build cmake-build-debug
 ```
 
@@ -42,8 +42,8 @@ openocd --version
 ```
 
 Use the first `where openocd` result to understand which executable will run.
-Then verify that it can resolve this project's MSPM0 target scripts. A useful
-no-board config parse check is:
+Then verify that it can resolve this project's MSPM0 target scripts. A quick
+script-resolution check that should not initialize the adapter is:
 
 ```powershell
 openocd -f daplink.cfg -c "shutdown"
@@ -156,7 +156,7 @@ submodules.
 Before handing off a firmware change:
 
 ```powershell
-cmake -S . -B cmake-build-debug -G Ninja
+cmake -S . -B cmake-build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build cmake-build-debug
 ```
 
