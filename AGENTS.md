@@ -33,21 +33,16 @@ The normal output files are:
 - `cmake-build-debug/trobot.bin`
 - `cmake-build-debug/trobot.map`
 
-This project needs TI's OpenOCD build for MSPM0 support. On this machine, the
-expected default OpenOCD is:
-
-```text
-C:\Enviroment\openocd_1.3.1.50\bin\openocd.exe
-```
-
-Check the active OpenOCD before flashing:
+This project needs an OpenOCD build with TI MSPM0 support. Before flashing,
+check which OpenOCD executable is active:
 
 ```powershell
 where openocd
 openocd --version
 ```
 
-The first `where openocd` result should be the TI OpenOCD path above. A useful
+Use the first `where openocd` result to understand which executable will run.
+Then verify that it can resolve this project's MSPM0 target scripts. A useful
 no-board config parse check is:
 
 ```powershell
