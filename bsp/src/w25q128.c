@@ -14,16 +14,15 @@ static const bsp_spi_device_t flash_device = {
 };
 
 static uint16_t read_id() {
-    uint16_t id = 0;
+    const uint8_t cmd[] = {0x90, 0x00, 0x00, 0x00};
+    uint8_t id[2] = {0};
+
     bsp_spi_device_select(&flash_device);
-    bsp_spi_device_transfer(&flash_device, 0x90);
-    bsp_spi_device_transfer(&flash_device, 0x00);
-    bsp_spi_device_transfer(&flash_device, 0x00);
-    bsp_spi_device_transfer(&flash_device, 0x00);
-    id |= bsp_spi_device_transfer(&flash_device, 0xff) << 8;
-    id |= bsp_spi_device_transfer(&flash_device, 0xff);
+    bsp_spi_device_write(&flash_device, cmd, sizeof(cmd));
+    bsp_spi_device_read(&flash_device, id, sizeof(id), 0xff);
     bsp_spi_device_deselect(&flash_device);
-    return id;
+
+    return ((uint16_t)id[0] << 8) | id[1];
 }
 
 void w25q128_init() {
