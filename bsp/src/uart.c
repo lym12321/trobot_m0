@@ -116,6 +116,52 @@ void bsp_uart_set_callback(bsp_uart_e device, bsp_uart_callback_t cb) {
     callback[idx(device)] = cb;
 }
 
+static uint32_t ulpclk_divisor(void) {
+    switch (DL_SYSCTL_getULPCLKDivider()) {
+    case DL_SYSCTL_ULPCLK_DIV_1: return 1;
+    case DL_SYSCTL_ULPCLK_DIV_2: return 2;
+    case DL_SYSCTL_ULPCLK_DIV_3: return 3;
+    default: BSP_ASSERT(false); return 1;
+    }
+}
+
+static uint32_t uart_clock_divisor(DL_UART_CLOCK_DIVIDE_RATIO ratio) {
+    switch (ratio) {
+    case DL_UART_CLOCK_DIVIDE_RATIO_1: return 1;
+    case DL_UART_CLOCK_DIVIDE_RATIO_2: return 2;
+    case DL_UART_CLOCK_DIVIDE_RATIO_3: return 3;
+    case DL_UART_CLOCK_DIVIDE_RATIO_4: return 4;
+    case DL_UART_CLOCK_DIVIDE_RATIO_5: return 5;
+    case DL_UART_CLOCK_DIVIDE_RATIO_6: return 6;
+    case DL_UART_CLOCK_DIVIDE_RATIO_7: return 7;
+    case DL_UART_CLOCK_DIVIDE_RATIO_8: return 8;
+    default: BSP_ASSERT(false); return 1;
+    }
+}
+
+static uint32_t uart_clock_freq(bsp_uart_e device) {
+    DL_UART_ClockConfig config;
+    DL_UART_getClockConfig(device, &config);
+
+    uint32_t source_freq = 0;
+    switch (config.clockSel) {
+    case DL_UART_CLOCK_BUSCLK:
+        source_freq = CPUCLK_FREQ / ulpclk_divisor();
+        break;
+    case DL_UART_CLOCK_MFCLK:
+        source_freq = 4000000;
+        break;
+    case DL_UART_CLOCK_LFCLK:
+        source_freq = 32768;
+        break;
+    default:
+        BSP_ASSERT(false);
+        break;
+    }
+
+    return source_freq / uart_clock_divisor(config.divideRatio);
+}
+
 void bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate) {
     BSP_ASSERT(baudrate > 0);
 
@@ -123,40 +169,20 @@ void bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate) {
 
     unsigned long state = bsp_sys_enter_critical();
     DL_UART_changeConfig(device);
-    DL_UART_configBaudRate(device, UART_DEBUG_INST_FREQUENCY, baudrate);
+    DL_UART_configBaudRate(device, uart_clock_freq(device), baudrate);
     DL_UART_enable(device);
     bsp_sys_exit_critical(state);
 }
 
 
-// #define reg_irq_handler(device)                                                                                         \
-// void device##_IRQHandler() {                                                                                            \
-//     const uint8_t id = idx(device);                                                                                     \
-//     switch (DL_UART_getPendingInterrupt(device)) {                                                                      \
-//     case DL_UART_IIDX_DMA_DONE_TX:                                                                                      \
-//         if (ds_rq_size(&rq[id][0]) == 0) {                                                                              \
-//             busy[id] = 0;                                                                                               \
-//         } else {                                                                                                        \
-//             send_rq_dma(device);                                                                                        \
-//         }                                                                                                               \
-//         break;                                                                                                          \
-//     default: break;                                                                                                     \
-//     }                                                                                                                   \
-// }
-//
-// reg_irq_handler(UART0)
-// reg_irq_handler(UART1)
-// reg_irq_handler(UART2)
-// reg_irq_handler(UART3)
-
-void UART0_IRQHandler() {
-    const uint8_t id = idx(UART0);
-    switch (DL_UART_getPendingInterrupt(UART0)) {
+static void uart_irq_proc(bsp_uart_e device) {
+    const uint8_t id = idx(device);
+    switch (DL_UART_getPendingInterrupt(device)) {
     case DL_UART_IIDX_DMA_DONE_TX:
         if (ds_rq_size(&rq[id]) == 0) {
             busy[id] = 0;
         } else {
-            send_rq_dma(UART0);
+            send_rq_dma(device);
         }
         break;
     case DL_UART_IIDX_RX:
@@ -164,8 +190,24 @@ void UART0_IRQHandler() {
     case DL_UART_IIDX_OVERRUN_ERROR:
     case DL_UART_IIDX_FRAMING_ERROR:
     case DL_UART_IIDX_PARITY_ERROR:
-        rx_fifo_proc(UART0);
+        rx_fifo_proc(device);
         break;
     default: break;
     }
+}
+
+void UART0_IRQHandler() {
+    uart_irq_proc(UART0);
+}
+
+void UART1_IRQHandler() {
+    uart_irq_proc(UART1);
+}
+
+void UART2_IRQHandler() {
+    uart_irq_proc(UART2);
+}
+
+void UART3_IRQHandler() {
+    uart_irq_proc(UART3);
 }

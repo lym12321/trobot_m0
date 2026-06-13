@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #define BSP_UART_DEVICE_COUNT 4
-#define BSP_UART_BUFFER_SIZE 512
+#define BSP_UART_BUFFER_SIZE 128
 
 typedef bsp_uart_handle_t bsp_uart_e;
 typedef void (*bsp_uart_callback_t) (bsp_uart_e device, const uint8_t *data, size_t len);
