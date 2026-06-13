@@ -151,11 +151,13 @@ static inline void bsp_lcd_draw_char(uint16_t x, uint16_t y, char ch, uint16_t c
         return;
     }
 
+    uint16_t lcd_width = bsp_lcd_get_width();
+    uint16_t lcd_height = bsp_lcd_get_height();
     uint16_t char_width = (BSP_LCD_FONT_WIDTH + 1) * scale;
     uint16_t char_height = (BSP_LCD_FONT_HEIGHT + 1) * scale;
 
-    if (x >= BSP_LCD_WIDTH || y >= BSP_LCD_HEIGHT ||
-        x + char_width > BSP_LCD_WIDTH || y + char_height > BSP_LCD_HEIGHT) {
+    if (x >= lcd_width || y >= lcd_height ||
+        x + char_width > lcd_width || y + char_height > lcd_height) {
         return;
     }
 
@@ -196,12 +198,15 @@ static inline const uint8_t *bsp_lcd_glyph(char ch) {
 static inline uint16_t bsp_lcd_print_line_1x(uint16_t x, uint16_t y, const char *text,
                                              uint16_t color, uint16_t bg) {
     uint16_t count = 0;
+    uint16_t lcd_width = bsp_lcd_get_width();
+    uint16_t lcd_height = bsp_lcd_get_height();
+    uint8_t row_buf[BSP_LCD_MAX_WIDTH * 2];
 
     while (text[count] != '\0' && text[count] != '\n' &&
-           x + (count + 1) * (BSP_LCD_FONT_WIDTH + 1) <= BSP_LCD_WIDTH) {
+           x + (count + 1) * (BSP_LCD_FONT_WIDTH + 1) <= lcd_width) {
         count++;
     }
-    if (count == 0 || y + BSP_LCD_FONT_HEIGHT + 1 > BSP_LCD_HEIGHT) {
+    if (count == 0 || y + BSP_LCD_FONT_HEIGHT + 1 > lcd_height) {
         return 0;
     }
 
@@ -209,6 +214,8 @@ static inline uint16_t bsp_lcd_print_line_1x(uint16_t x, uint16_t y, const char 
     bsp_lcd_write_begin();
 
     for (uint8_t row = 0; row < BSP_LCD_FONT_HEIGHT + 1; row++) {
+        uint32_t out = 0;
+
         for (uint16_t i = 0; i < count; i++) {
             const uint8_t *glyph = bsp_lcd_glyph(text[i]);
             for (uint8_t col = 0; col < BSP_LCD_FONT_WIDTH + 1; col++) {
@@ -217,9 +224,12 @@ static inline uint16_t bsp_lcd_print_line_1x(uint16_t x, uint16_t y, const char 
                     (glyph[col] & (uint8_t)(1u << row))) {
                     pixel_color = color;
                 }
-                bsp_lcd_write_color(pixel_color, 1);
+                row_buf[out++] = (uint8_t)(pixel_color >> 8);
+                row_buf[out++] = (uint8_t)pixel_color;
             }
         }
+
+        bsp_lcd_write_bytes(row_buf, out);
     }
 
     bsp_lcd_write_end();
@@ -230,6 +240,8 @@ static inline uint16_t bsp_lcd_print_line_1x(uint16_t x, uint16_t y, const char 
 static inline void bsp_lcd_print(uint16_t x, uint16_t y, const char *text, uint16_t color, uint16_t bg, uint8_t scale) {
     uint16_t cursor_x = x;
     uint16_t cursor_y = y;
+    uint16_t lcd_width = bsp_lcd_get_width();
+    uint16_t lcd_height = bsp_lcd_get_height();
     uint16_t char_width = (BSP_LCD_FONT_WIDTH + 1) * scale;
     uint16_t char_height = (BSP_LCD_FONT_HEIGHT + 1) * scale;
 
@@ -245,11 +257,11 @@ static inline void bsp_lcd_print(uint16_t x, uint16_t y, const char *text, uint1
             continue;
         }
 
-        if (cursor_x + char_width > BSP_LCD_WIDTH) {
+        if (cursor_x + char_width > lcd_width) {
             cursor_x = x;
             cursor_y += char_height;
         }
-        if (cursor_y + char_height > BSP_LCD_HEIGHT) {
+        if (cursor_y + char_height > lcd_height) {
             return;
         }
 
