@@ -5,7 +5,6 @@
 #include "bsp/uart.h"
 
 #include "bsp/sys.h"
-#include "bsp/uart_rx.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -28,9 +27,9 @@ typedef struct {
     volatile uint8_t tx_count;
     uart_tx_slot_t tx_slots[BSP_UART_TX_SLOT_COUNT];
 
-    uint8_t rx_frame[BSP_UART_RX_BUFFER_SIZE];
+    uint8_t rx_data[BSP_UART_RX_BUFFER_SIZE];
     uint8_t rx_fifo[16];
-    bsp_uart_rx_processor_t rx;
+    uint16_t rx_length;
     volatile bool rx_pending;
     volatile bool rx_active;
 
@@ -85,15 +84,6 @@ static int uart_index(bsp_uart_e device) {
         }
     }
     return -1;
-}
-
-static void uart_emit_frame(
-    void *context, const uint8_t *data, size_t length) {
-    const int id = (int)(uintptr_t)context;
-    uart_state_t *state = &uart_states[id];
-    if (state->callback != NULL) {
-        state->callback(uart_devices[id], data, length);
-    }
 }
 
 static uint32_t uart_irq_mask(bool dma_enabled) {
@@ -154,18 +144,6 @@ bool bsp_uart_init(bsp_uart_e device, uint8_t tx_dma_ch) {
 
     memset(state, 0, sizeof(*state));
     state->dma_channel = tx_dma_ch;
-    if (!bsp_uart_rx_processor_init(&state->rx, state->rx_frame, sizeof(state->rx_frame), uart_emit_frame, (void *)(uintptr_t)id)) {
-        bsp_sys_exit_critical(irq_state);
-        return false;
-    }
-
-    const bsp_uart_rx_config_t rx_config = {
-        .mode = BSP_UART_RX_MODE_TIMEOUT,
-    };
-    if (!bsp_uart_rx_processor_configure(&state->rx, &rx_config)) {
-        bsp_sys_exit_critical(irq_state);
-        return false;
-    }
     DL_UART_setRXFIFOThreshold(device, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
     DL_UART_setRXInterruptTimeout(device, 0);
 
@@ -330,24 +308,6 @@ bool bsp_uart_printf_async(bsp_uart_e device, const char *fmt, ...) {
         device, (const uint8_t *)buf, (uint32_t)len);
 }
 
-bool bsp_uart_configure_rx(bsp_uart_e device, const bsp_uart_rx_config_t *config) {
-    const int id = uart_index(device);
-    if (id < 0 || !uart_states[id].initialized || config == NULL) {
-        return false;
-    }
-
-    unsigned long irq_state = bsp_sys_enter_critical();
-    bool result =
-        bsp_uart_rx_processor_configure(&uart_states[id].rx, config);
-    if (result) {
-        uart_states[id].rx_pending = false;
-        uart_states[id].rx_active = false;
-        DL_UART_setRXFIFOThreshold(device, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
-    }
-    bsp_sys_exit_critical(irq_state);
-    return result;
-}
-
 void bsp_uart_set_callback(bsp_uart_e device, bsp_uart_callback_t callback) {
     const int id = uart_index(device);
     if (id < 0 || !uart_states[id].initialized) {
@@ -443,7 +403,9 @@ bool bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate) {
     return true;
 }
 
-static bool uart_drain_rx(bsp_uart_e device, uart_state_t *state) {
+static void uart_drain_rx(int id) {
+    bsp_uart_e device = uart_devices[id];
+    uart_state_t *state = &uart_states[id];
     uint32_t length;
     bool received = false;
     do {
@@ -451,12 +413,14 @@ static bool uart_drain_rx(bsp_uart_e device, uart_state_t *state) {
             device, state->rx_fifo, sizeof(state->rx_fifo));
         if (length > 0u) {
             received = true;
-            bsp_uart_rx_processor_feed(
-                &state->rx, state->rx_fifo, (size_t)length);
+            uint32_t space = sizeof(state->rx_data) - state->rx_length;
+            uint32_t copy_len = length < space ? length : space;
+            memcpy(&state->rx_data[state->rx_length], state->rx_fifo, copy_len);
+            state->rx_length += (uint16_t)copy_len;
         }
-    } while (length == sizeof(state->rx_fifo));
+    } while (length > 0u);
 
-    if (received) {
+    if (received && state->rx_length > 0u) {
         if (!state->rx_pending) {
             DL_UART_setRXFIFOThreshold(device, DL_UART_RX_FIFO_LEVEL_1_2_FULL);
         }
@@ -464,7 +428,6 @@ static bool uart_drain_rx(bsp_uart_e device, uart_state_t *state) {
         state->rx_active = true;
         uart_idle_timer_start();
     }
-    return received;
 }
 
 static void uart_tx_complete(
@@ -495,15 +458,19 @@ static void uart_irq_proc(bsp_uart_e device) {
             uart_tx_complete(device, state);
             break;
         case DL_UART_IIDX_RX:
-            (void)uart_drain_rx(device, state);
+            uart_drain_rx(id);
             break;
         case DL_UART_IIDX_OVERRUN_ERROR:
         case DL_UART_IIDX_FRAMING_ERROR:
         case DL_UART_IIDX_PARITY_ERROR:
         case DL_UART_IIDX_BREAK_ERROR:
         case DL_UART_IIDX_NOISE_ERROR:
-            (void)uart_drain_rx(device, state);
-            bsp_uart_rx_processor_error(&state->rx);
+            uart_drain_rx(id);
+            state->rx_length = 0u;
+            state->rx_pending = false;
+            state->rx_active = false;
+            DL_UART_setRXFIFOThreshold(
+                device, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
             break;
         case DL_UART_IIDX_NO_INTERRUPT:
         default:
@@ -541,7 +508,7 @@ void UART_RX_IDLE_INST_IRQHandler(void) {
             continue;
         }
 
-        (void)uart_drain_rx(uart_devices[i], state);
+        uart_drain_rx((int)i);
     }
 
     bool pending = false;
@@ -557,7 +524,11 @@ void UART_RX_IDLE_INST_IRQHandler(void) {
         } else {
             DL_UART_setRXFIFOThreshold(uart_devices[i], DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
             state->rx_pending = false;
-            bsp_uart_rx_processor_timeout(&state->rx);
+            if (state->callback != NULL && state->rx_length > 0u) {
+                state->callback(
+                    uart_devices[i], state->rx_data, state->rx_length);
+            }
+            state->rx_length = 0u;
         }
     }
 

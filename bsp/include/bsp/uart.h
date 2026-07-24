@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include "bsp/def.h"
-#include "bsp/uart_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,21 +45,10 @@ bool bsp_uart_printf(bsp_uart_e device, const char *fmt, ...);
 bool bsp_uart_printf_async(bsp_uart_e device, const char *fmt, ...);
 
 /**
- * Select when the receive callback is invoked.
- *
- * TIMEOUT is the default and uses the one-shot UART_RX_IDLE timer. The
- * callback runs about 50-100 us after the last byte with the current SysConfig.
- * DELIMITER frames include the delimiter bytes. FIXED_LENGTH can emit several
- * frames from one FIFO drain. RAW emits one frame for every FIFO drain.
- */
-bool bsp_uart_configure_rx(
-    bsp_uart_e device, const bsp_uart_rx_config_t *config);
-
-/**
  * Set the single receive callback for one UART. Passing NULL removes it.
- * The callback runs in interrupt context and receives complete frames
- * according to the configured RX mode. data is valid only until the callback
- * returns; copy it before deferring work to a task.
+ * The callback runs in interrupt context after the RX line becomes idle.
+ * At most BSP_UART_RX_BUFFER_SIZE bytes are kept from one continuous receive;
+ * excess bytes are ignored. data is valid only until the callback returns.
  */
 void bsp_uart_set_callback(bsp_uart_e device, bsp_uart_callback_t callback);
 bool bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate);

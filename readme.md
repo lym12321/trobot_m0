@@ -47,11 +47,11 @@ git clone https://github.com/lym12321/trobot_m0.git --recursive
 
 #### 为什么 UART 接收回调中调用 `bsp_uart_printf()` 没有输出？
 
-UART 接收回调运行在中断上下文。为避免格式化和阻塞发送长时间占用中断，`bsp_uart_printf()` 与 `bsp_uart_printf_async()` 都会在中断中返回 `false`。请在回调中使用 `xQueueSendFromISR()` 等方式把数据交给任务，再在任务中解析和格式化发送。若只需发送已经准备好的字节，可使用 `bsp_uart_send_async()`，并检查其返回值。
+UART 接收回调运行在中断上下文。为避免格式化和阻塞发送长时间占用中断，`bsp_uart_printf()` 与 `bsp_uart_printf_async()` 都会在中断中返回 `false`。请在回调中只记录必要状态，使用 `FromISR` 接口通知任务，再由任务解析和格式化发送。MSPM0G3507 的 UART RX FIFO 只有 4 entries；在 2 Mbaud 连续数据流中，不要复制大块数据或直接回显，否则回调期间可能发生 overrun。只有协议能保证对端已停止发送时，才适合在回调中使用 `bsp_uart_send_async()` 发送准备好的字节。
 
-#### 为什么超时接收模式不能接收任意长度的数据？
+#### UART 接收数据超过 128 字节会怎样？
 
-当前每个 UART 的 RX 帧缓冲区为 128 字节。超出容量的超时帧会被丢弃，并在下一次空闲后恢复接收。较长或连续的数据流应使用定长、末尾标志分帧，或按实际协议调整缓冲区大小。
+当前每个 UART 的 RX 缓冲区为 128 字节。同一次连续接收只保留前 128 字节，超出部分直接忽略，串口空闲后仅回调一次。
 
 #### 为什么克隆后找不到 `components/utils` 或构建失败？
 

@@ -191,17 +191,13 @@ intentional, reviewed, and cannot reasonably be represented in SysConfig.
 - `bsp_time_delay()` uses `vTaskDelay()` only from task context while the
   scheduler is running; before the scheduler or in an ISR it busy-waits.
   `bsp_time_get_ms()` is FreeRTOS tick time, not a persistent wall clock.
-- UART RX callbacks run in interrupt context, from a UART ISR or the TIMG8 idle
-  ISR. Keep them short and use queues, notifications, or other `FromISR`
-  handoff APIs for substantial work.
-- UART RX supports raw FIFO chunks, timeout-delimited frames, fixed-length
-  frames, and delimiter-terminated frames. Timeout framing is the default.
-  Each UART has one callback set by `bsp_uart_set_callback()`, which receives
-  completed frames only. Timeout framing shares the generated 16-bit TIMG8
-  `UART_RX_IDLE` one-shot timer across UART instances. It is armed only while
-  receiving, so TIMG0 remains available to other code. Each UART keeps its own
-  activity flag, so simultaneous traffic can delay a callback by one timer
-  period but cannot starve another UART's pending frame.
+- UART RX callbacks run in the TIMG8 idle ISR. Keep them short and use queues,
+  notifications, or other `FromISR` handoff APIs for substantial work.
+- Each UART has one RX callback set by `bsp_uart_set_callback()`. It runs after
+  the RX line becomes idle and receives at most the first 128 bytes; excess
+  bytes from the same continuous receive are ignored. RX shares the generated
+  16-bit TIMG8 `UART_RX_IDLE` one-shot timer across UART instances. It is armed
+  only while receiving, so TIMG0 remains available to other code.
 - UART asynchronous TX uses fixed packet slots protected against concurrent
   task/ISR producers. Its APIs return `false` if DMA is unavailable, a packet
   is too large, or all slots are occupied; callers that cannot tolerate loss
