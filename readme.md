@@ -42,3 +42,29 @@ git clone https://github.com/lym12321/trobot_m0.git --recursive
 ![](assets/sysconfig.png)
 
 其生成的 `device_linker.lds`、`ti_msp_dl_config.c` 和 `ti_msp_dl_config.h` 文件同样需保存在 `core` 路径下，只有这样才能被 CMake 正确包含。
+
+### 常见问题
+
+#### 为什么 UART 接收回调中调用 `bsp_uart_printf()` 没有输出？
+
+UART 接收回调运行在中断上下文。为避免格式化和阻塞发送长时间占用中断，`bsp_uart_printf()` 与 `bsp_uart_printf_async()` 都会在中断中返回 `false`。请在回调中使用 `xQueueSendFromISR()` 等方式把数据交给任务，再在任务中解析和格式化发送。若只需发送已经准备好的字节，可使用 `bsp_uart_send_async()`，并检查其返回值。
+
+#### 为什么超时接收模式不能接收任意长度的数据？
+
+当前每个 UART 的 RX 帧缓冲区为 128 字节。超出容量的超时帧会被丢弃，并在下一次空闲后恢复接收。较长或连续的数据流应使用定长、末尾标志分帧，或按实际协议调整缓冲区大小。
+
+#### 为什么克隆后找不到 `components/utils` 或构建失败？
+
+`components/utils` 是 Git 子模块。请使用 `git clone --recursive` 克隆项目；已有仓库可执行 `git submodule update --init --recursive` 补全子模块。
+
+#### 为什么 OpenOCD 找不到 MSPM0 target 或烧录器？
+
+若提示找不到 `target/ti_mspm0.cfg`，通常是使用了不支持 MSPM0 的 OpenOCD，或脚本搜索路径不正确，请确认运行的是 TI 提供的版本。若 target 脚本能够加载，但提示找不到 CMSIS-DAP、ST-Link 或 XDS110，则应检查所选根目录 `*.cfg`、USB 驱动、连接线和烧录器占用情况。
+
+#### 为什么修改 SysConfig 后代码没有变化或无法构建？
+
+`core/trobot.syscfg` 是外设、引脚、时钟、DMA 和中断配置的源文件。修改后必须使用与文件元数据匹配的 SysConfig 和 MSPM0 SDK 重新生成，并将 `ti_msp_dl_config.c`、`ti_msp_dl_config.h` 和 `device_linker.lds` 保存到 `core`。应用代码应使用生成头文件中的宏，不要猜测或手动维护实例名称。
+
+#### LCD 和 W25Q128 同时使用时为什么会出现显示或读写异常？
+
+LCD 和 W25Q128 共享 SPI1。优先使用各自的 BSP 接口，它们会管理总线锁和片选。自定义 LCD 像素流需要在设置地址、开始写入、传输数据和结束写入的完整过程外持有 `bsp_spi_lock(SPI1_INST)`，并避免从 ISR 访问共享 SPI 总线。
