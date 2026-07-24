@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include "bsp/lcd.h"
+#include "bsp/spi.h"
 
 /*
  * Tiny ASCII text renderer for the ST7735 LCD BSP driver.
@@ -167,6 +168,7 @@ static inline void bsp_lcd_draw_char(uint16_t x, uint16_t y, char ch, uint16_t c
 
     const uint8_t *glyph = bsp_lcd_font5x7[(uint8_t)ch - ' '];
 
+    bsp_spi_lock(SPI1_INST);
     bsp_lcd_set_address(x, y, x + char_width - 1, y + char_height - 1);
     bsp_lcd_write_begin();
 
@@ -184,6 +186,7 @@ static inline void bsp_lcd_draw_char(uint16_t x, uint16_t y, char ch, uint16_t c
     }
 
     bsp_lcd_write_end();
+    bsp_spi_unlock(SPI1_INST);
 }
 
 /* Return the 5-byte glyph for a printable ASCII character, or '?' for unsupported input. */
@@ -210,6 +213,7 @@ static inline uint16_t bsp_lcd_print_line_1x(uint16_t x, uint16_t y, const char 
         return 0;
     }
 
+    bsp_spi_lock(SPI1_INST);
     bsp_lcd_set_address(x, y, x + count * (BSP_LCD_FONT_WIDTH + 1) - 1, y + BSP_LCD_FONT_HEIGHT);
     bsp_lcd_write_begin();
 
@@ -233,6 +237,7 @@ static inline uint16_t bsp_lcd_print_line_1x(uint16_t x, uint16_t y, const char 
     }
 
     bsp_lcd_write_end();
+    bsp_spi_unlock(SPI1_INST);
     return count;
 }
 

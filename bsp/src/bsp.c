@@ -6,14 +6,32 @@
 #include "bsp/lcd.h"
 #include "bsp/w25q128.h"
 
+const char *volatile bsp_assert_expression;
+const char *volatile bsp_assert_message;
+const char *volatile bsp_assert_file;
+volatile int bsp_assert_line;
+
+#define BSP_CORE_DEBUG_DHCSR (*(volatile uint32_t *)0xE000EDF0u)
+#define BSP_CORE_DEBUG_ENABLED (1u << 0)
+
 void bsp_assert_failed(const char *expr, const char *file, int line) {
-    // if (CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk)
-    //     __asm volatile("bkpt 0");
-    // else {
-    //     for (;;) __asm volatile("nop");
-    // }
-    __asm volatile("bkpt 0");
-    for (;;) __asm volatile("nop");
+    bsp_assert_failed_msg(expr, NULL, file, line);
+}
+
+void bsp_assert_failed_msg(
+    const char *expr, const char *message, const char *file, int line) {
+    __disable_irq();
+    bsp_assert_expression = expr;
+    bsp_assert_message = message;
+    bsp_assert_file = file;
+    bsp_assert_line = line;
+
+    if ((BSP_CORE_DEBUG_DHCSR & BSP_CORE_DEBUG_ENABLED) != 0u) {
+        __BKPT(0);
+    }
+    for (;;) {
+        __WFI();
+    }
 }
 
 void bsp_hw_init() {

@@ -13,9 +13,48 @@ SysConfig and DriverLib rules still matter.
 - `bsp/` contains board support code for UART, SPI, LCD, flash, time, GPIO, and
   low-level helpers.
 - `components/` contains optional reusable modules. `components/utils` is a git
-  submodule and is required by the current application.
+  submodule and is required by the current application. It supplies the C++
+  logger, task/queue wrappers, terminal, message, CRC, and VOFA helpers.
 - `app/` contains the firmware entry point and application tasks.
+- `bsp/include/bsp/` is the public BSP include surface. `bsp/internal/` is
+  private to the BSP target and must not be included from `app/` or components.
 - `*.cfg` files at the repository root select the OpenOCD probe interface.
+
+## Runtime Architecture
+
+The current boot and initialization sequence is:
+
+1. The GCC startup code initializes `.data`, `.bss`, C/C++ constructors, and
+   then calls `main()`.
+2. `main()` calls `SYSCFG_DL_init()`, creates the `app_entrance` task, and
+   starts the FreeRTOS scheduler.
+3. `app_entrance()` calls `bsp_hw_init()`, initializes UART0 and its TX DMA
+   queue, enables the board GPIO interrupt, initializes the logger, and creates
+   application tasks.
+4. `bsp_hw_init()` initializes the ST7735 LCD and verifies the W25Q128 device
+   ID. A failed BSP assertion records its expression/message/file/line, breaks
+   only when a debugger is attached, and then stops forever.
+
+Keep this order in mind when adding code. A task that logs asynchronously needs
+its UART initialized first. LCD and flash users need the board/SPI GPIO state
+initialized first. Do not move scheduler-dependent initialization into global
+C++ constructors.
+
+The current interrupt ownership is split across layers:
+
+- `GROUP1_IRQHandler` is owned by `app/main/main.cc` for the board key GPIO.
+- `UART0_IRQHandler` through `UART3_IRQHandler` are owned by `bsp/src/uart.c`.
+- `TIMG8_IRQHandler` is owned by `bsp/src/uart.c`; the generated
+  `UART_RX_IDLE` one-shot timer provides the UART RX idle timeout.
+- `SVC_Handler`, `PendSV_Handler`, and `SysTick_Handler` are owned by the
+  FreeRTOS port.
+- All other startup-vector handlers are weak defaults until a module provides
+  the exact symbol.
+
+The generated configuration currently uses an 80 MHz CPU clock, a 1 kHz
+FreeRTOS tick, UART0 as `UART_DEBUG_INST`, and SPI1 for the LCD and W25Q128.
+These are orientation notes only; after any SysConfig change, the generated
+header and `FreeRTOSConfig.h` are the authoritative values.
 
 ## Build And Flash
 
@@ -32,6 +71,11 @@ The normal output files are:
 - `cmake-build-debug/trobot.hex`
 - `cmake-build-debug/trobot.bin`
 - `cmake-build-debug/trobot.map`
+
+The app and BSP source lists use recursive CMake globs without
+`CONFIGURE_DEPENDS`. After adding, removing, or renaming a source file, rerun
+the CMake configure command before building. Adding or removing a component
+directory also requires reconfiguration.
 
 This project needs an OpenOCD build with TI MSPM0 support. Before flashing,
 check which OpenOCD executable is active:
@@ -81,7 +125,10 @@ When a user-requested change does require SysConfig:
    `@v2CliArgs`, `@versions`, device, package, and SDK product.
 3. Regenerate the SysConfig outputs into `core/`.
 4. Re-read `core/ti_msp_dl_config.h` before using generated names in code.
-5. Build the project.
+5. Check that the `.syscfg`, `ti_msp_dl_config.c`,
+   `ti_msp_dl_config.h`, and linker-script diffs form one consistent change
+   set. A changed `.syscfg` with unchanged generated output is not complete.
+6. Build the project.
 
 Do not guess generated names. Use the local macros and function spellings from
 `core/ti_msp_dl_config.h`, such as `SYSCFG_DL_init()`, `UART_DEBUG_INST`,
@@ -99,6 +146,17 @@ intentional, reviewed, and cannot reasonably be represented in SysConfig.
 
 ## Coding Rules
 
+- Keep opening braces on the same line as functions, control-flow statements,
+  types, and other block declarations.
+- Use `snake_case` for functions, types, variables, parameters, and structure
+  or class members. Preprocessor macro names and enum values are exempt and
+  may use `UPPER_SNAKE_CASE`.
+- Keep implementations as simple and direct as practical. Avoid unnecessary
+  abstraction, indirection, helper layers, and duplicated state.
+- Prefer short, clear variable names. Do not construct excessively long or
+  complicated identifier names when a concise name communicates the scope.
+- There is no strict single-line length limit. Prefer readability and do not
+  wrap otherwise clear code solely to satisfy a conventional column limit.
 - Prefer existing BSP APIs over directly touching DriverLib from `app/`.
 - Prefer DriverLib and SysConfig-generated macros over raw register writes.
 - Keep app logic in `app/`, board abstractions in `bsp/`, reusable C++ helpers in
@@ -116,6 +174,42 @@ intentional, reviewed, and cannot reasonably be represented in SysConfig.
   to UART or DMA send functions.
 - Do not call blocking or task-only FreeRTOS APIs from interrupts. Use `FromISR`
   APIs where needed.
+- C++ is built without exceptions, RTTI, or `__cxa_atexit`. Do not use
+  exceptions, `dynamic_cast`, or code that depends on runtime type information
+  or global-object destruction.
+
+## FreeRTOS And Concurrency
+
+- FreeRTOS uses `heap_4.c` with a 10 KiB configured heap. Both static and
+  dynamic allocation APIs are enabled, but the current app and utility task
+  wrappers use dynamic allocation.
+- FreeRTOS stack-depth arguments are words, not bytes. The current tick rate is
+  1 kHz, preemption is enabled, and time slicing is disabled.
+- Despite its name, `os::task::static_create()` currently allocates its callable
+  thunk with `pvPortMalloc()` and creates the task with `xTaskCreate()`. Do not
+  count it as a fully static task when budgeting RAM.
+- `bsp_time_delay()` uses `vTaskDelay()` only from task context while the
+  scheduler is running; before the scheduler or in an ISR it busy-waits.
+  `bsp_time_get_ms()` is FreeRTOS tick time, not a persistent wall clock.
+- UART RX callbacks run in interrupt context, from a UART ISR or the TIMG8 idle
+  ISR. Keep them short and use queues, notifications, or other `FromISR`
+  handoff APIs for substantial work.
+- UART RX supports raw FIFO chunks, timeout-delimited frames, fixed-length
+  frames, and delimiter-terminated frames. Timeout framing is the default.
+  Each UART has one callback set by `bsp_uart_set_callback()`, which receives
+  completed frames only. Timeout framing shares the generated 16-bit TIMG8
+  `UART_RX_IDLE` one-shot timer across UART instances. It is armed only while
+  receiving, so TIMG0 remains available to other code. Each UART keeps its own
+  activity flag, so simultaneous traffic can delay a callback by one timer
+  period but cannot starve another UART's pending frame.
+- UART asynchronous TX uses fixed packet slots protected against concurrent
+  task/ISR producers. Its APIs return `false` if DMA is unavailable, a packet
+  is too large, or all slots are occupied; callers that cannot tolerate loss
+  must retry or provide backpressure.
+- The LCD and W25Q128 share SPI1. Device helpers hold a recursive FreeRTOS
+  mutex while the scheduler is active. For a multi-call LCD pixel stream, hold
+  `bsp_spi_lock(SPI1_INST)` across address setup, begin/write/end, and never
+  access the shared bus from an ISR.
 
 ## CMake Conventions
 
@@ -128,6 +222,9 @@ intentional, reviewed, and cannot reasonably be represented in SysConfig.
   `CMakeLists.txt` and links aliases named `components::<name>`.
 - `app/CMakeLists.txt` recursively includes app subdirectories and builds app
   sources as an object library.
+- The top-level target uses C17/C++17 defaults, while the current `app`, `bsp`,
+  and `utils` targets explicitly request C++23. New code must still obey the
+  globally disabled exception/RTTI settings.
 
 If adding a new component under `components/<name>`, provide a local
 `CMakeLists.txt` and define a `components::<name>` alias so the aggregator links

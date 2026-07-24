@@ -40,6 +40,7 @@
 
 #include "ti_msp_dl_config.h"
 
+DL_UART_Main_backupConfig gUART3Backup;
 DL_SPI_backupConfig gSPI1Backup;
 
 /*
@@ -53,13 +54,17 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     /* Module-Specific Initializations*/
     SYSCFG_DL_SYSCTL_init();
     SYSCFG_DL_TIMER_TASK_init();
+    SYSCFG_DL_UART_RX_IDLE_init();
     SYSCFG_DL_UART_DEBUG_init();
+    SYSCFG_DL_UART1_init();
+    SYSCFG_DL_UART2_init();
+    SYSCFG_DL_UART3_init();
     SYSCFG_DL_SPI1_init();
     SYSCFG_DL_DMA_init();
     SYSCFG_DL_SYSTICK_init();
     /* Ensure backup structures have no valid state */
 
-
+	gUART3Backup.backupRdy 	= false;
 	gSPI1Backup.backupRdy 	= false;
 
 }
@@ -71,6 +76,7 @@ SYSCONFIG_WEAK bool SYSCFG_DL_saveConfiguration(void)
 {
     bool retStatus = true;
 
+	retStatus &= DL_UART_Main_saveConfiguration(UART3_INST, &gUART3Backup);
 	retStatus &= DL_SPI_saveConfiguration(SPI1_INST, &gSPI1Backup);
 
     return retStatus;
@@ -81,6 +87,7 @@ SYSCONFIG_WEAK bool SYSCFG_DL_restoreConfiguration(void)
 {
     bool retStatus = true;
 
+	retStatus &= DL_UART_Main_restoreConfiguration(UART3_INST, &gUART3Backup);
 	retStatus &= DL_SPI_restoreConfiguration(SPI1_INST, &gSPI1Backup);
 
     return retStatus;
@@ -91,7 +98,11 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_GPIO_reset(GPIOA);
     DL_GPIO_reset(GPIOB);
     DL_TimerG_reset(TIMER_TASK_INST);
+    DL_TimerG_reset(UART_RX_IDLE_INST);
     DL_UART_Main_reset(UART_DEBUG_INST);
+    DL_UART_Main_reset(UART1_INST);
+    DL_UART_Main_reset(UART2_INST);
+    DL_UART_Main_reset(UART3_INST);
     DL_SPI_reset(SPI1_INST);
 
 
@@ -99,7 +110,11 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
     DL_TimerG_enablePower(TIMER_TASK_INST);
+    DL_TimerG_enablePower(UART_RX_IDLE_INST);
     DL_UART_Main_enablePower(UART_DEBUG_INST);
+    DL_UART_Main_enablePower(UART1_INST);
+    DL_UART_Main_enablePower(UART2_INST);
+    DL_UART_Main_enablePower(UART3_INST);
     DL_SPI_enablePower(SPI1_INST);
 
 
@@ -116,6 +131,18 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
         GPIO_UART_DEBUG_IOMUX_TX, GPIO_UART_DEBUG_IOMUX_TX_FUNC);
     DL_GPIO_initPeripheralInputFunction(
         GPIO_UART_DEBUG_IOMUX_RX, GPIO_UART_DEBUG_IOMUX_RX_FUNC);
+    DL_GPIO_initPeripheralOutputFunction(
+        GPIO_UART1_IOMUX_TX, GPIO_UART1_IOMUX_TX_FUNC);
+    DL_GPIO_initPeripheralInputFunction(
+        GPIO_UART1_IOMUX_RX, GPIO_UART1_IOMUX_RX_FUNC);
+    DL_GPIO_initPeripheralOutputFunction(
+        GPIO_UART2_IOMUX_TX, GPIO_UART2_IOMUX_TX_FUNC);
+    DL_GPIO_initPeripheralInputFunction(
+        GPIO_UART2_IOMUX_RX, GPIO_UART2_IOMUX_RX_FUNC);
+    DL_GPIO_initPeripheralOutputFunction(
+        GPIO_UART3_IOMUX_TX, GPIO_UART3_IOMUX_TX_FUNC);
+    DL_GPIO_initPeripheralInputFunction(
+        GPIO_UART3_IOMUX_RX, GPIO_UART3_IOMUX_RX_FUNC);
 
     DL_GPIO_initPeripheralOutputFunction(
         GPIO_SPI1_IOMUX_SCLK, GPIO_SPI1_IOMUX_SCLK_FUNC);
@@ -306,6 +333,43 @@ SYSCONFIG_WEAK void SYSCFG_DL_TIMER_TASK_init(void) {
 
 }
 
+/*
+ * Timer clock configuration to be sourced by BUSCLK /  (40000000 Hz)
+ * timerClkFreq = (timerClkSrc / (timerClkDivRatio * (timerClkPrescale + 1)))
+ *   40000000 Hz = 40000000 Hz / (1 * (0 + 1))
+ */
+static const DL_TimerG_ClockConfig gUART_RX_IDLEClockConfig = {
+    .clockSel    = DL_TIMER_CLOCK_BUSCLK,
+    .divideRatio = DL_TIMER_CLOCK_DIVIDE_1,
+    .prescale    = 0U,
+};
+
+/*
+ * Timer load value (where the counter starts from) is calculated as (timerPeriod * timerClockFreq) - 1
+ * UART_RX_IDLE_INST_LOAD_VALUE = (50us * 40000000 Hz) - 1
+ */
+static const DL_TimerG_TimerConfig gUART_RX_IDLETimerConfig = {
+    .period     = UART_RX_IDLE_INST_LOAD_VALUE,
+    .timerMode  = DL_TIMER_TIMER_MODE_ONE_SHOT,
+    .startTimer = DL_TIMER_STOP,
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_UART_RX_IDLE_init(void) {
+
+    DL_TimerG_setClockConfig(UART_RX_IDLE_INST,
+        (DL_TimerG_ClockConfig *) &gUART_RX_IDLEClockConfig);
+
+    DL_TimerG_initTimerMode(UART_RX_IDLE_INST,
+        (DL_TimerG_TimerConfig *) &gUART_RX_IDLETimerConfig);
+    DL_TimerG_enableInterrupt(UART_RX_IDLE_INST , DL_TIMERG_INTERRUPT_ZERO_EVENT);
+    DL_TimerG_enableClock(UART_RX_IDLE_INST);
+
+
+
+
+
+}
+
 
 static const DL_UART_Main_ClockConfig gUART_DEBUGClockConfig = {
     .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
@@ -343,6 +407,99 @@ SYSCONFIG_WEAK void SYSCFG_DL_UART_DEBUG_init(void)
     DL_UART_Main_setTXFIFOThreshold(UART_DEBUG_INST, DL_UART_TX_FIFO_LEVEL_1_2_EMPTY);
 
     DL_UART_Main_enable(UART_DEBUG_INST);
+}
+static const DL_UART_Main_ClockConfig gUART1ClockConfig = {
+    .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
+    .divideRatio = DL_UART_MAIN_CLOCK_DIVIDE_RATIO_1
+};
+
+static const DL_UART_Main_Config gUART1Config = {
+    .mode        = DL_UART_MAIN_MODE_NORMAL,
+    .direction   = DL_UART_MAIN_DIRECTION_TX_RX,
+    .flowControl = DL_UART_MAIN_FLOW_CONTROL_NONE,
+    .parity      = DL_UART_MAIN_PARITY_NONE,
+    .wordLength  = DL_UART_MAIN_WORD_LENGTH_8_BITS,
+    .stopBits    = DL_UART_MAIN_STOP_BITS_ONE
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_UART1_init(void)
+{
+    DL_UART_Main_setClockConfig(UART1_INST, (DL_UART_Main_ClockConfig *) &gUART1ClockConfig);
+
+    DL_UART_Main_init(UART1_INST, (DL_UART_Main_Config *) &gUART1Config);
+    /*
+     * Configure baud rate by setting oversampling and baud rate divisors.
+     *  Target baud rate: 9600
+     *  Actual baud rate: 9599.81
+     */
+    DL_UART_Main_setOversampling(UART1_INST, DL_UART_OVERSAMPLING_RATE_16X);
+    DL_UART_Main_setBaudRateDivisor(UART1_INST, UART1_IBRD_40_MHZ_9600_BAUD, UART1_FBRD_40_MHZ_9600_BAUD);
+
+
+
+    DL_UART_Main_enable(UART1_INST);
+}
+static const DL_UART_Main_ClockConfig gUART2ClockConfig = {
+    .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
+    .divideRatio = DL_UART_MAIN_CLOCK_DIVIDE_RATIO_1
+};
+
+static const DL_UART_Main_Config gUART2Config = {
+    .mode        = DL_UART_MAIN_MODE_NORMAL,
+    .direction   = DL_UART_MAIN_DIRECTION_TX_RX,
+    .flowControl = DL_UART_MAIN_FLOW_CONTROL_NONE,
+    .parity      = DL_UART_MAIN_PARITY_NONE,
+    .wordLength  = DL_UART_MAIN_WORD_LENGTH_8_BITS,
+    .stopBits    = DL_UART_MAIN_STOP_BITS_ONE
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_UART2_init(void)
+{
+    DL_UART_Main_setClockConfig(UART2_INST, (DL_UART_Main_ClockConfig *) &gUART2ClockConfig);
+
+    DL_UART_Main_init(UART2_INST, (DL_UART_Main_Config *) &gUART2Config);
+    /*
+     * Configure baud rate by setting oversampling and baud rate divisors.
+     *  Target baud rate: 9600
+     *  Actual baud rate: 9599.81
+     */
+    DL_UART_Main_setOversampling(UART2_INST, DL_UART_OVERSAMPLING_RATE_16X);
+    DL_UART_Main_setBaudRateDivisor(UART2_INST, UART2_IBRD_40_MHZ_9600_BAUD, UART2_FBRD_40_MHZ_9600_BAUD);
+
+
+
+    DL_UART_Main_enable(UART2_INST);
+}
+static const DL_UART_Main_ClockConfig gUART3ClockConfig = {
+    .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
+    .divideRatio = DL_UART_MAIN_CLOCK_DIVIDE_RATIO_1
+};
+
+static const DL_UART_Main_Config gUART3Config = {
+    .mode        = DL_UART_MAIN_MODE_NORMAL,
+    .direction   = DL_UART_MAIN_DIRECTION_TX_RX,
+    .flowControl = DL_UART_MAIN_FLOW_CONTROL_NONE,
+    .parity      = DL_UART_MAIN_PARITY_NONE,
+    .wordLength  = DL_UART_MAIN_WORD_LENGTH_8_BITS,
+    .stopBits    = DL_UART_MAIN_STOP_BITS_ONE
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_UART3_init(void)
+{
+    DL_UART_Main_setClockConfig(UART3_INST, (DL_UART_Main_ClockConfig *) &gUART3ClockConfig);
+
+    DL_UART_Main_init(UART3_INST, (DL_UART_Main_Config *) &gUART3Config);
+    /*
+     * Configure baud rate by setting oversampling and baud rate divisors.
+     *  Target baud rate: 9600
+     *  Actual baud rate: 9600.1
+     */
+    DL_UART_Main_setOversampling(UART3_INST, DL_UART_OVERSAMPLING_RATE_16X);
+    DL_UART_Main_setBaudRateDivisor(UART3_INST, UART3_IBRD_80_MHZ_9600_BAUD, UART3_FBRD_80_MHZ_9600_BAUD);
+
+
+
+    DL_UART_Main_enable(UART3_INST);
 }
 
 static const DL_SPI_Config gSPI1_config = {
@@ -383,21 +540,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_SPI1_init(void) {
     DL_SPI_enable(SPI1_INST);
 }
 
-static const DL_DMA_Config gDMA_UART0_TXConfig = {
-    .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
-    .extendedMode   = DL_DMA_NORMAL_MODE,
-    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
-    .srcIncrement   = DL_DMA_ADDR_INCREMENT,
-    .destWidth      = DL_DMA_WIDTH_BYTE,
-    .srcWidth       = DL_DMA_WIDTH_BYTE,
-    .trigger        = UART_DEBUG_INST_DMA_TRIGGER,
-    .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
-};
-
-SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART0_TX_init(void)
-{
-    DL_DMA_initChannel(DMA, DMA_UART0_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART0_TXConfig);
-}
 static const DL_DMA_Config gDMA_SPI1_RXConfig = {
     .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
     .extendedMode   = DL_DMA_NORMAL_MODE,
@@ -428,10 +570,25 @@ SYSCONFIG_WEAK void SYSCFG_DL_DMA_SPI1_TX_init(void)
 {
     DL_DMA_initChannel(DMA, DMA_SPI1_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_SPI1_TXConfig);
 }
+static const DL_DMA_Config gDMA_UART0_TXConfig = {
+    .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
+    .extendedMode   = DL_DMA_NORMAL_MODE,
+    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
+    .srcIncrement   = DL_DMA_ADDR_INCREMENT,
+    .destWidth      = DL_DMA_WIDTH_BYTE,
+    .srcWidth       = DL_DMA_WIDTH_BYTE,
+    .trigger        = UART_DEBUG_INST_DMA_TRIGGER,
+    .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART0_TX_init(void)
+{
+    DL_DMA_initChannel(DMA, DMA_UART0_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART0_TXConfig);
+}
 SYSCONFIG_WEAK void SYSCFG_DL_DMA_init(void){
-    SYSCFG_DL_DMA_UART0_TX_init();
     SYSCFG_DL_DMA_SPI1_RX_init();
     SYSCFG_DL_DMA_SPI1_TX_init();
+    SYSCFG_DL_DMA_UART0_TX_init();
 }
 
 

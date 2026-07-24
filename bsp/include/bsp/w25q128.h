@@ -6,5 +6,13 @@
 
 #include "bsp/def.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void w25q128_init();
+
+#ifdef __cplusplus
+}
+#endif
 

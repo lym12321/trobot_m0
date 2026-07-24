@@ -20,7 +20,7 @@ void example_task(void *args) {
     bsp_lcd_printf(0, 100, LCD_WHITE, LCD_BLACK, 1, "man what can i say???");
 
     for (;;) {
-        logger::info("Hello, world! Time: %d ms", bsp_time_get_ms());
+        // logger::info("Hello, world! Time: %d ms", bsp_time_get_ms());
         bsp_lcd_printf(0, 30, LCD_WHITE, LCD_BLACK, 1, "rtos time: %d", bsp_time_get_ms());
         os::task::sleep(1);
     }

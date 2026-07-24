@@ -94,6 +94,11 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define TIMER_TASK_INST_IRQHandler                              TIMG0_IRQHandler
 #define TIMER_TASK_INST_INT_IRQN                                (TIMG0_INT_IRQn)
 #define TIMER_TASK_INST_LOAD_VALUE                                      (39999U)
+/* Defines for UART_RX_IDLE */
+#define UART_RX_IDLE_INST                                                (TIMG8)
+#define UART_RX_IDLE_INST_IRQHandler                            TIMG8_IRQHandler
+#define UART_RX_IDLE_INST_INT_IRQN                              (TIMG8_INT_IRQn)
+#define UART_RX_IDLE_INST_LOAD_VALUE                                     (1999U)
 
 
 
@@ -113,6 +118,54 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define UART_DEBUG_BAUD_RATE                                           (2000000)
 #define UART_DEBUG_IBRD_40_MHZ_2000000_BAUD                                  (1)
 #define UART_DEBUG_FBRD_40_MHZ_2000000_BAUD                                 (16)
+/* Defines for UART1 */
+#define UART1_INST                                                         UART1
+#define UART1_INST_FREQUENCY                                            40000000
+#define UART1_INST_IRQHandler                                   UART1_IRQHandler
+#define UART1_INST_INT_IRQN                                       UART1_INT_IRQn
+#define GPIO_UART1_RX_PORT                                                 GPIOA
+#define GPIO_UART1_TX_PORT                                                 GPIOA
+#define GPIO_UART1_RX_PIN                                          DL_GPIO_PIN_9
+#define GPIO_UART1_TX_PIN                                          DL_GPIO_PIN_8
+#define GPIO_UART1_IOMUX_RX                                      (IOMUX_PINCM20)
+#define GPIO_UART1_IOMUX_TX                                      (IOMUX_PINCM19)
+#define GPIO_UART1_IOMUX_RX_FUNC                       IOMUX_PINCM20_PF_UART1_RX
+#define GPIO_UART1_IOMUX_TX_FUNC                       IOMUX_PINCM19_PF_UART1_TX
+#define UART1_BAUD_RATE                                                   (9600)
+#define UART1_IBRD_40_MHZ_9600_BAUD                                        (260)
+#define UART1_FBRD_40_MHZ_9600_BAUD                                         (27)
+/* Defines for UART2 */
+#define UART2_INST                                                         UART2
+#define UART2_INST_FREQUENCY                                            40000000
+#define UART2_INST_IRQHandler                                   UART2_IRQHandler
+#define UART2_INST_INT_IRQN                                       UART2_INT_IRQn
+#define GPIO_UART2_RX_PORT                                                 GPIOB
+#define GPIO_UART2_TX_PORT                                                 GPIOB
+#define GPIO_UART2_RX_PIN                                         DL_GPIO_PIN_18
+#define GPIO_UART2_TX_PIN                                         DL_GPIO_PIN_17
+#define GPIO_UART2_IOMUX_RX                                      (IOMUX_PINCM44)
+#define GPIO_UART2_IOMUX_TX                                      (IOMUX_PINCM43)
+#define GPIO_UART2_IOMUX_RX_FUNC                       IOMUX_PINCM44_PF_UART2_RX
+#define GPIO_UART2_IOMUX_TX_FUNC                       IOMUX_PINCM43_PF_UART2_TX
+#define UART2_BAUD_RATE                                                   (9600)
+#define UART2_IBRD_40_MHZ_9600_BAUD                                        (260)
+#define UART2_FBRD_40_MHZ_9600_BAUD                                         (27)
+/* Defines for UART3 */
+#define UART3_INST                                                         UART3
+#define UART3_INST_FREQUENCY                                            80000000
+#define UART3_INST_IRQHandler                                   UART3_IRQHandler
+#define UART3_INST_INT_IRQN                                       UART3_INT_IRQn
+#define GPIO_UART3_RX_PORT                                                 GPIOB
+#define GPIO_UART3_TX_PORT                                                 GPIOB
+#define GPIO_UART3_RX_PIN                                          DL_GPIO_PIN_3
+#define GPIO_UART3_TX_PIN                                          DL_GPIO_PIN_2
+#define GPIO_UART3_IOMUX_RX                                      (IOMUX_PINCM16)
+#define GPIO_UART3_IOMUX_TX                                      (IOMUX_PINCM15)
+#define GPIO_UART3_IOMUX_RX_FUNC                       IOMUX_PINCM16_PF_UART3_RX
+#define GPIO_UART3_IOMUX_TX_FUNC                       IOMUX_PINCM15_PF_UART3_TX
+#define UART3_BAUD_RATE                                                   (9600)
+#define UART3_IBRD_80_MHZ_9600_BAUD                                        (520)
+#define UART3_FBRD_80_MHZ_9600_BAUD                                         (53)
 
 
 
@@ -137,15 +190,15 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 
 
 
-/* Defines for DMA_UART0_TX */
-#define DMA_UART0_TX_CHAN_ID                                                 (2)
-#define UART_DEBUG_INST_DMA_TRIGGER                          (DMA_UART0_TX_TRIG)
 /* Defines for DMA_SPI1_RX */
-#define DMA_SPI1_RX_CHAN_ID                                                  (1)
+#define DMA_SPI1_RX_CHAN_ID                                                  (2)
 #define SPI1_INST_DMA_TRIGGER_0                               (DMA_SPI1_RX_TRIG)
 /* Defines for DMA_SPI1_TX */
-#define DMA_SPI1_TX_CHAN_ID                                                  (0)
+#define DMA_SPI1_TX_CHAN_ID                                                  (1)
 #define SPI1_INST_DMA_TRIGGER_1                               (DMA_SPI1_TX_TRIG)
+/* Defines for DMA_UART0_TX */
+#define DMA_UART0_TX_CHAN_ID                                                 (0)
+#define UART_DEBUG_INST_DMA_TRIGGER                          (DMA_UART0_TX_TRIG)
 
 
 /* Port definition for Pin Group GPIO_BOARD */
@@ -195,7 +248,11 @@ void SYSCFG_DL_SYSCTL_init(void);
 
 bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 void SYSCFG_DL_TIMER_TASK_init(void);
+void SYSCFG_DL_UART_RX_IDLE_init(void);
 void SYSCFG_DL_UART_DEBUG_init(void);
+void SYSCFG_DL_UART1_init(void);
+void SYSCFG_DL_UART2_init(void);
+void SYSCFG_DL_UART3_init(void);
 void SYSCFG_DL_SPI1_init(void);
 void SYSCFG_DL_DMA_init(void);
 

@@ -6,6 +6,10 @@
 
 #include "bsp/def.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     SPI_Regs *inst;
     GPIO_Regs *cs_port;
@@ -33,3 +37,7 @@ void bsp_spi_device_transmit(const bsp_spi_device_t *device, uint8_t data);
 void bsp_spi_device_write(const bsp_spi_device_t *device, const uint8_t *data, uint32_t len);
 void bsp_spi_device_read(const bsp_spi_device_t *device, uint8_t *data, uint32_t len, uint8_t dummy);
 void bsp_spi_device_transfer_buf(const bsp_spi_device_t *device, const uint8_t *tx, uint8_t *rx, uint32_t len, uint8_t dummy);
+
+#ifdef __cplusplus
+}
+#endif

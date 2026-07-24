@@ -26,8 +26,6 @@ static uint16_t read_id() {
 }
 
 void w25q128_init() {
-    bsp_spi_device_deselect(&flash_device);
-
     uint8_t cnt = 0;
     uint16_t id = read_id();
     while (id != 0xef17 && ++ cnt < 10) {

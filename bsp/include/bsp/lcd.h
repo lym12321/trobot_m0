@@ -21,9 +21,7 @@
  *
  * SPI sharing:
  * - This LCD shares SPI1 with other devices such as W25Q128.
- * - The driver controls only the LCD chip-select through the BSP SPI device
- *   transaction helpers. Keep each draw operation non-reentrant unless a
- *   higher-level bus lock is added.
+ * - Complete public draw operations are serialized through the SPI bus lock.
  *
  * Pixel stream API:
  * - For custom high-speed drawing, call bsp_lcd_set_address(), then

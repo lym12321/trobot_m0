@@ -275,8 +275,10 @@ void bsp_lcd_set_direction(bsp_lcd_direction_e direction) {
         return;
     }
 
+    bsp_spi_lock(LCD_PORT);
     lcd_config = lcd_direction_configs[direction];
     lcd_write_command_data(ST7735_MADCTL, &lcd_config.madctl, 1);
+    bsp_spi_unlock(LCD_PORT);
 }
 
 uint16_t bsp_lcd_get_width() {
@@ -339,8 +341,8 @@ void bsp_lcd_set_address(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
 }
 
 void bsp_lcd_write_begin() {
-    dc(1);
     lcd_select();
+    dc(1);
 }
 
 void bsp_lcd_write_end() {
@@ -361,8 +363,8 @@ static uint8_t lcd_clip_rect(uint16_t *x, uint16_t *y, uint16_t *width, uint16_t
 }
 
 static void lcd_begin_window(uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
-    uint16_t x1 = x + width - 1u;
-    uint16_t y1 = y + height - 1u;
+    uint16_t x1 = (uint16_t)(x + width - 1u);
+    uint16_t y1 = (uint16_t)(y + height - 1u);
 
     (void)lcd_prepare_address(&x, &y, &x1, &y1);
     lcd_select();
@@ -480,19 +482,26 @@ void bsp_lcd_clear(uint16_t color) {
 }
 
 void bsp_lcd_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *data) {
+    const uint16_t source_width = width;
     if (data == 0 || !lcd_clip_rect(&x, &y, &width, &height)) {
         return;
     }
 
     bsp_spi_lock(LCD_PORT);
     lcd_begin_window(x, y, width, height);
-    bsp_lcd_write_rgb565(data, (uint32_t)width * height);
+    if (width == source_width) {
+        bsp_lcd_write_rgb565(data, (uint32_t)width * height);
+    } else {
+        for (uint16_t row = 0; row < height; row++) {
+            bsp_lcd_write_rgb565(
+                data + (size_t)row * source_width, width);
+        }
+    }
     lcd_deselect();
     bsp_spi_unlock(LCD_PORT);
 }
 
 void bsp_lcd_init() {
-    bsp_spi_device_deselect(&lcd_device);
     dc(1);
     blk(0);
 

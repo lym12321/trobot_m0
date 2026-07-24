@@ -4,6 +4,8 @@
 
 #include "bsp/spi.h"
 
+#include "bsp/sys.h"
+
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
@@ -30,7 +32,7 @@ static spi_bus_t spi_buses[] = {
 };
 
 static uint8_t spi_scheduler_running(void) {
-    return xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED;
+    return xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
 }
 
 static spi_bus_t *spi_bus_get(SPI_Regs *inst) {
@@ -56,6 +58,7 @@ static SemaphoreHandle_t spi_bus_mutex_get(spi_bus_t *bus) {
 }
 
 static void spi_bus_lock_if_running(spi_bus_t *bus) {
+    BSP_ASSERT(!bsp_sys_in_isr());
     if (!spi_scheduler_running()) {
         return;
     }
@@ -64,6 +67,7 @@ static void spi_bus_lock_if_running(spi_bus_t *bus) {
 }
 
 static void spi_bus_unlock_if_running(spi_bus_t *bus) {
+    BSP_ASSERT(!bsp_sys_in_isr());
     if (!spi_scheduler_running()) {
         return;
     }
@@ -158,8 +162,8 @@ void bsp_spi_device_select(const bsp_spi_device_t *device) {
 void bsp_spi_device_deselect(const bsp_spi_device_t *device) {
     spi_bus_t *bus = spi_bus_get(device->inst);
 
+    BSP_ASSERT(bus->select_depth > 0);
     if (bus->select_depth == 0) {
-        spi_device_release_cs(device);
         return;
     }
 

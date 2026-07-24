@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #include "bsp/def.h"
 
 #ifdef __cplusplus
@@ -12,20 +14,20 @@ extern "C" {
 
 /**
  * 判断是否在中断中
- * @return 若在中断中调用则返回 1, 否则返回 0
+ * @return 若在中断中调用则返回 true, 否则返回 false
  */
-uint8_t bsp_sys_in_isr();
+bool bsp_sys_in_isr(void);
 
 /**
  * 软件 reset, 效果几乎等效于按 reset 键
  */
-void bsp_sys_reset();
+void bsp_sys_reset(void);
 
 /**
  * 进入临界区
  * @return state, 在 exit 时需传入
  */
-unsigned long bsp_sys_enter_critical();
+unsigned long bsp_sys_enter_critical(void);
 
 /**
  * 退出临界区
