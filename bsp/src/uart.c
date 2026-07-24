@@ -10,6 +10,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#define UART_IDLE_TICK_US 50u
+#define UART_FRAME_BITS 10u
+#define UART_IDLE_FRAMES 2u
+
 typedef struct {
     uint16_t length;
     volatile bool ready;
@@ -30,8 +34,9 @@ typedef struct {
     uint8_t rx_data[BSP_UART_RX_BUFFER_SIZE];
     uint8_t rx_fifo[16];
     uint16_t rx_length;
+    uint16_t idle_ticks;
+    uint16_t rx_ticks;
     volatile bool rx_pending;
-    volatile bool rx_active;
 
     bsp_uart_callback_t callback;
 } uart_state_t;
@@ -48,6 +53,20 @@ static bsp_uart_e const uart_devices[BSP_UART_DEVICE_COUNT] = {
     UART1,
     UART2,
     UART3,
+};
+
+static const uint32_t uart_baudrates[BSP_UART_DEVICE_COUNT] = {
+    UART_DEBUG_BAUD_RATE,
+    UART1_BAUD_RATE,
+    UART2_BAUD_RATE,
+    UART3_BAUD_RATE,
+};
+
+static const uint32_t uart_frequencies[BSP_UART_DEVICE_COUNT] = {
+    UART_DEBUG_INST_FREQUENCY,
+    UART1_INST_FREQUENCY,
+    UART2_INST_FREQUENCY,
+    UART3_INST_FREQUENCY,
 };
 
 static const uint8_t uart_dma_channels[BSP_UART_DEVICE_COUNT] = {
@@ -100,6 +119,14 @@ static uint32_t uart_irq_mask(bool dma_enabled) {
     return mask;
 }
 
+static uint16_t uart_idle_ticks(uint32_t baudrate) {
+    uint32_t idle_us =
+        (UART_FRAME_BITS * UART_IDLE_FRAMES * 1000000u + baudrate - 1u) /
+        baudrate;
+    return (uint16_t)(
+        (idle_us + UART_IDLE_TICK_US - 1u) / UART_IDLE_TICK_US + 1u);
+}
+
 static void uart_idle_timer_init(void) {
     if (uart_idle_timer_ready) {
         return;
@@ -144,6 +171,11 @@ bool bsp_uart_init(bsp_uart_e device, uint8_t tx_dma_ch) {
 
     memset(state, 0, sizeof(*state));
     state->dma_channel = tx_dma_ch;
+    state->idle_ticks = uart_idle_ticks(uart_baudrates[id]);
+    if (!DL_UART_isFIFOsEnabled(device)) {
+        bsp_sys_exit_critical(irq_state);
+        return false;
+    }
     DL_UART_setRXFIFOThreshold(device, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
     DL_UART_setRXInterruptTimeout(device, 0);
 
@@ -319,67 +351,6 @@ void bsp_uart_set_callback(bsp_uart_e device, bsp_uart_callback_t callback) {
     bsp_sys_exit_critical(irq_state);
 }
 
-static uint32_t ulpclk_divisor(void) {
-    switch (DL_SYSCTL_getULPCLKDivider()) {
-    case DL_SYSCTL_ULPCLK_DIV_1:
-        return 1;
-    case DL_SYSCTL_ULPCLK_DIV_2:
-        return 2;
-    case DL_SYSCTL_ULPCLK_DIV_3:
-        return 3;
-    default:
-        BSP_ASSERT(false);
-        return 1;
-    }
-}
-
-static uint32_t uart_clock_divisor(DL_UART_CLOCK_DIVIDE_RATIO ratio) {
-    switch (ratio) {
-    case DL_UART_CLOCK_DIVIDE_RATIO_1:
-        return 1;
-    case DL_UART_CLOCK_DIVIDE_RATIO_2:
-        return 2;
-    case DL_UART_CLOCK_DIVIDE_RATIO_3:
-        return 3;
-    case DL_UART_CLOCK_DIVIDE_RATIO_4:
-        return 4;
-    case DL_UART_CLOCK_DIVIDE_RATIO_5:
-        return 5;
-    case DL_UART_CLOCK_DIVIDE_RATIO_6:
-        return 6;
-    case DL_UART_CLOCK_DIVIDE_RATIO_7:
-        return 7;
-    case DL_UART_CLOCK_DIVIDE_RATIO_8:
-        return 8;
-    default:
-        BSP_ASSERT(false);
-        return 1;
-    }
-}
-
-static uint32_t uart_clock_freq(bsp_uart_e device) {
-    DL_UART_ClockConfig config;
-    DL_UART_getClockConfig(device, &config);
-
-    uint32_t source_freq = 0;
-    switch (config.clockSel) {
-    case DL_UART_CLOCK_BUSCLK:
-        source_freq = CPUCLK_FREQ / ulpclk_divisor();
-        break;
-    case DL_UART_CLOCK_MFCLK:
-        source_freq = 4000000u;
-        break;
-    case DL_UART_CLOCK_LFCLK:
-        source_freq = 32768u;
-        break;
-    default:
-        BSP_ASSERT(false);
-        break;
-    }
-
-    return source_freq / uart_clock_divisor(config.divideRatio);
-}
-
 bool bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate) {
     const int id = uart_index(device);
     if (id < 0 || !uart_states[id].initialized || baudrate == 0u) {
@@ -396,8 +367,14 @@ bool bsp_uart_set_baudrate(bsp_uart_e device, uint32_t baudrate) {
 
     unsigned long irq_state = bsp_sys_enter_critical();
     DL_UART_changeConfig(device);
-    DL_UART_configBaudRate(device, uart_clock_freq(device), baudrate);
+    DL_UART_configBaudRate(device, uart_frequencies[id], baudrate);
+    DL_UART_enableFIFOs(device);
     DL_UART_enable(device);
+    state->rx_length = 0u;
+    state->rx_ticks = 0u;
+    state->rx_pending = false;
+    state->idle_ticks = uart_idle_ticks(baudrate);
+    DL_UART_setRXFIFOThreshold(device, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
     bsp_sys_exit_critical(irq_state);
     uart_tx_unlock(state);
     return true;
@@ -425,7 +402,7 @@ static void uart_drain_rx(int id) {
             DL_UART_setRXFIFOThreshold(device, DL_UART_RX_FIFO_LEVEL_1_2_FULL);
         }
         state->rx_pending = true;
-        state->rx_active = true;
+        state->rx_ticks = state->idle_ticks;
         uart_idle_timer_start();
     }
 }
@@ -467,8 +444,8 @@ static void uart_irq_proc(bsp_uart_e device) {
         case DL_UART_IIDX_NOISE_ERROR:
             uart_drain_rx(id);
             state->rx_length = 0u;
+            state->rx_ticks = 0u;
             state->rx_pending = false;
-            state->rx_active = false;
             DL_UART_setRXFIFOThreshold(
                 device, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
             break;
@@ -518,12 +495,13 @@ void UART_RX_IDLE_INST_IRQHandler(void) {
             continue;
         }
 
-        if (state->rx_active) {
-            state->rx_active = false;
+        if (state->rx_ticks > 1u) {
+            state->rx_ticks--;
             pending = true;
         } else {
             DL_UART_setRXFIFOThreshold(uart_devices[i], DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
             state->rx_pending = false;
+            state->rx_ticks = 0u;
             if (state->callback != NULL && state->rx_length > 0u) {
                 state->callback(
                     uart_devices[i], state->rx_data, state->rx_length);

@@ -131,9 +131,9 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define GPIO_UART1_IOMUX_TX                                      (IOMUX_PINCM19)
 #define GPIO_UART1_IOMUX_RX_FUNC                       IOMUX_PINCM20_PF_UART1_RX
 #define GPIO_UART1_IOMUX_TX_FUNC                       IOMUX_PINCM19_PF_UART1_TX
-#define UART1_BAUD_RATE                                                   (9600)
-#define UART1_IBRD_40_MHZ_9600_BAUD                                        (260)
-#define UART1_FBRD_40_MHZ_9600_BAUD                                         (27)
+#define UART1_BAUD_RATE                                                 (115200)
+#define UART1_IBRD_40_MHZ_115200_BAUD                                       (21)
+#define UART1_FBRD_40_MHZ_115200_BAUD                                       (45)
 /* Defines for UART2 */
 #define UART2_INST                                                         UART2
 #define UART2_INST_FREQUENCY                                            40000000
@@ -147,9 +147,9 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define GPIO_UART2_IOMUX_TX                                      (IOMUX_PINCM43)
 #define GPIO_UART2_IOMUX_RX_FUNC                       IOMUX_PINCM44_PF_UART2_RX
 #define GPIO_UART2_IOMUX_TX_FUNC                       IOMUX_PINCM43_PF_UART2_TX
-#define UART2_BAUD_RATE                                                   (9600)
-#define UART2_IBRD_40_MHZ_9600_BAUD                                        (260)
-#define UART2_FBRD_40_MHZ_9600_BAUD                                         (27)
+#define UART2_BAUD_RATE                                                 (115200)
+#define UART2_IBRD_40_MHZ_115200_BAUD                                       (21)
+#define UART2_FBRD_40_MHZ_115200_BAUD                                       (45)
 /* Defines for UART3 */
 #define UART3_INST                                                         UART3
 #define UART3_INST_FREQUENCY                                            80000000
@@ -163,9 +163,9 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define GPIO_UART3_IOMUX_TX                                      (IOMUX_PINCM15)
 #define GPIO_UART3_IOMUX_RX_FUNC                       IOMUX_PINCM16_PF_UART3_RX
 #define GPIO_UART3_IOMUX_TX_FUNC                       IOMUX_PINCM15_PF_UART3_TX
-#define UART3_BAUD_RATE                                                   (9600)
-#define UART3_IBRD_80_MHZ_9600_BAUD                                        (520)
-#define UART3_FBRD_80_MHZ_9600_BAUD                                         (53)
+#define UART3_BAUD_RATE                                                 (115200)
+#define UART3_IBRD_80_MHZ_115200_BAUD                                       (43)
+#define UART3_FBRD_80_MHZ_115200_BAUD                                       (26)
 
 
 
@@ -199,6 +199,15 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 /* Defines for DMA_UART0_TX */
 #define DMA_UART0_TX_CHAN_ID                                                 (0)
 #define UART_DEBUG_INST_DMA_TRIGGER                          (DMA_UART0_TX_TRIG)
+/* Defines for DMA_UART1_TX */
+#define DMA_UART1_TX_CHAN_ID                                                 (3)
+#define UART1_INST_DMA_TRIGGER                               (DMA_UART1_TX_TRIG)
+/* Defines for DMA_UART2_TX */
+#define DMA_UART2_TX_CHAN_ID                                                 (4)
+#define UART2_INST_DMA_TRIGGER                               (DMA_UART2_TX_TRIG)
+/* Defines for DMA_UART3_TX */
+#define DMA_UART3_TX_CHAN_ID                                                 (5)
+#define UART3_INST_DMA_TRIGGER                               (DMA_UART3_TX_TRIG)
 
 
 /* Port definition for Pin Group GPIO_BOARD */

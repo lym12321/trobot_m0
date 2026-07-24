@@ -429,13 +429,19 @@ SYSCONFIG_WEAK void SYSCFG_DL_UART1_init(void)
     DL_UART_Main_init(UART1_INST, (DL_UART_Main_Config *) &gUART1Config);
     /*
      * Configure baud rate by setting oversampling and baud rate divisors.
-     *  Target baud rate: 9600
-     *  Actual baud rate: 9599.81
+     *  Target baud rate: 115200
+     *  Actual baud rate: 115190.78
      */
     DL_UART_Main_setOversampling(UART1_INST, DL_UART_OVERSAMPLING_RATE_16X);
-    DL_UART_Main_setBaudRateDivisor(UART1_INST, UART1_IBRD_40_MHZ_9600_BAUD, UART1_FBRD_40_MHZ_9600_BAUD);
+    DL_UART_Main_setBaudRateDivisor(UART1_INST, UART1_IBRD_40_MHZ_115200_BAUD, UART1_FBRD_40_MHZ_115200_BAUD);
 
 
+    /* Configure DMA Transmit Event */
+    DL_UART_Main_enableDMATransmitEvent(UART1_INST);
+    /* Configure FIFOs */
+    DL_UART_Main_enableFIFOs(UART1_INST);
+    DL_UART_Main_setRXFIFOThreshold(UART1_INST, DL_UART_RX_FIFO_LEVEL_1_2_FULL);
+    DL_UART_Main_setTXFIFOThreshold(UART1_INST, DL_UART_TX_FIFO_LEVEL_1_2_EMPTY);
 
     DL_UART_Main_enable(UART1_INST);
 }
@@ -460,13 +466,19 @@ SYSCONFIG_WEAK void SYSCFG_DL_UART2_init(void)
     DL_UART_Main_init(UART2_INST, (DL_UART_Main_Config *) &gUART2Config);
     /*
      * Configure baud rate by setting oversampling and baud rate divisors.
-     *  Target baud rate: 9600
-     *  Actual baud rate: 9599.81
+     *  Target baud rate: 115200
+     *  Actual baud rate: 115190.78
      */
     DL_UART_Main_setOversampling(UART2_INST, DL_UART_OVERSAMPLING_RATE_16X);
-    DL_UART_Main_setBaudRateDivisor(UART2_INST, UART2_IBRD_40_MHZ_9600_BAUD, UART2_FBRD_40_MHZ_9600_BAUD);
+    DL_UART_Main_setBaudRateDivisor(UART2_INST, UART2_IBRD_40_MHZ_115200_BAUD, UART2_FBRD_40_MHZ_115200_BAUD);
 
 
+    /* Configure DMA Transmit Event */
+    DL_UART_Main_enableDMATransmitEvent(UART2_INST);
+    /* Configure FIFOs */
+    DL_UART_Main_enableFIFOs(UART2_INST);
+    DL_UART_Main_setRXFIFOThreshold(UART2_INST, DL_UART_RX_FIFO_LEVEL_1_2_FULL);
+    DL_UART_Main_setTXFIFOThreshold(UART2_INST, DL_UART_TX_FIFO_LEVEL_1_2_EMPTY);
 
     DL_UART_Main_enable(UART2_INST);
 }
@@ -491,13 +503,19 @@ SYSCONFIG_WEAK void SYSCFG_DL_UART3_init(void)
     DL_UART_Main_init(UART3_INST, (DL_UART_Main_Config *) &gUART3Config);
     /*
      * Configure baud rate by setting oversampling and baud rate divisors.
-     *  Target baud rate: 9600
-     *  Actual baud rate: 9600.1
+     *  Target baud rate: 115200
+     *  Actual baud rate: 115190.78
      */
     DL_UART_Main_setOversampling(UART3_INST, DL_UART_OVERSAMPLING_RATE_16X);
-    DL_UART_Main_setBaudRateDivisor(UART3_INST, UART3_IBRD_80_MHZ_9600_BAUD, UART3_FBRD_80_MHZ_9600_BAUD);
+    DL_UART_Main_setBaudRateDivisor(UART3_INST, UART3_IBRD_80_MHZ_115200_BAUD, UART3_FBRD_80_MHZ_115200_BAUD);
 
 
+    /* Configure DMA Transmit Event */
+    DL_UART_Main_enableDMATransmitEvent(UART3_INST);
+    /* Configure FIFOs */
+    DL_UART_Main_enableFIFOs(UART3_INST);
+    DL_UART_Main_setRXFIFOThreshold(UART3_INST, DL_UART_RX_FIFO_LEVEL_1_2_FULL);
+    DL_UART_Main_setTXFIFOThreshold(UART3_INST, DL_UART_TX_FIFO_LEVEL_1_2_EMPTY);
 
     DL_UART_Main_enable(UART3_INST);
 }
@@ -585,10 +603,58 @@ SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART0_TX_init(void)
 {
     DL_DMA_initChannel(DMA, DMA_UART0_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART0_TXConfig);
 }
+static const DL_DMA_Config gDMA_UART1_TXConfig = {
+    .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
+    .extendedMode   = DL_DMA_NORMAL_MODE,
+    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
+    .srcIncrement   = DL_DMA_ADDR_INCREMENT,
+    .destWidth      = DL_DMA_WIDTH_BYTE,
+    .srcWidth       = DL_DMA_WIDTH_BYTE,
+    .trigger        = UART1_INST_DMA_TRIGGER,
+    .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART1_TX_init(void)
+{
+    DL_DMA_initChannel(DMA, DMA_UART1_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART1_TXConfig);
+}
+static const DL_DMA_Config gDMA_UART2_TXConfig = {
+    .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
+    .extendedMode   = DL_DMA_NORMAL_MODE,
+    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
+    .srcIncrement   = DL_DMA_ADDR_INCREMENT,
+    .destWidth      = DL_DMA_WIDTH_BYTE,
+    .srcWidth       = DL_DMA_WIDTH_BYTE,
+    .trigger        = UART2_INST_DMA_TRIGGER,
+    .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART2_TX_init(void)
+{
+    DL_DMA_initChannel(DMA, DMA_UART2_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART2_TXConfig);
+}
+static const DL_DMA_Config gDMA_UART3_TXConfig = {
+    .transferMode   = DL_DMA_SINGLE_TRANSFER_MODE,
+    .extendedMode   = DL_DMA_NORMAL_MODE,
+    .destIncrement  = DL_DMA_ADDR_UNCHANGED,
+    .srcIncrement   = DL_DMA_ADDR_INCREMENT,
+    .destWidth      = DL_DMA_WIDTH_BYTE,
+    .srcWidth       = DL_DMA_WIDTH_BYTE,
+    .trigger        = UART3_INST_DMA_TRIGGER,
+    .triggerType    = DL_DMA_TRIGGER_TYPE_EXTERNAL,
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_DMA_UART3_TX_init(void)
+{
+    DL_DMA_initChannel(DMA, DMA_UART3_TX_CHAN_ID , (DL_DMA_Config *) &gDMA_UART3_TXConfig);
+}
 SYSCONFIG_WEAK void SYSCFG_DL_DMA_init(void){
     SYSCFG_DL_DMA_SPI1_RX_init();
     SYSCFG_DL_DMA_SPI1_TX_init();
     SYSCFG_DL_DMA_UART0_TX_init();
+    SYSCFG_DL_DMA_UART1_TX_init();
+    SYSCFG_DL_DMA_UART2_TX_init();
+    SYSCFG_DL_DMA_UART3_TX_init();
 }
 
 

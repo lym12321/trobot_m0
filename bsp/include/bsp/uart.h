@@ -46,7 +46,8 @@ bool bsp_uart_printf_async(bsp_uart_e device, const char *fmt, ...);
 
 /**
  * Set the single receive callback for one UART. Passing NULL removes it.
- * The callback runs in interrupt context after the RX line becomes idle.
+ * The callback runs in interrupt context after a baud-dependent idle window
+ * covering two 8N1 frame times. The delay follows bsp_uart_set_baudrate().
  * At most BSP_UART_RX_BUFFER_SIZE bytes are kept from one continuous receive;
  * excess bytes are ignored. data is valid only until the callback returns.
  */
